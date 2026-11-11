@@ -1,7 +1,7 @@
 {
   "name": "ember",
   "version": "0.1.0",
-  "description": "Local-first notes with a memory: resurface, connect, and question a folder of Markdown files.",
+  "description": "Local-first notes with a memory: resurface old notes, find missing links and contradictions, and explore a Markdown vault as a 3D sphere.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -9,5 +9,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest"
-  }
+  },
+  "license": "MIT",
+  "keywords": [
+    "notes",
+    "markdown",
+    "obsidian",
+    "local-first",
+    "knowledge-management",
+    "macos"
+  ]
 }
