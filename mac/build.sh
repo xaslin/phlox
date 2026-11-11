@@ -9,6 +9,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/app"
 
 swiftc -O -o "$APP/Contents/MacOS/Ember" mac/main.swift -framework Cocoa -framework WebKit
 
+[ -f mac/Ember.icns ] || swift mac/icon.swift
+cp mac/Ember.icns "$APP/Contents/Resources/Ember.icns"
 cp server.js package.json "$APP/Contents/Resources/app/"
 cp -R public "$APP/Contents/Resources/app/public"
 [ -d node_modules ] && cp -R node_modules "$APP/Contents/Resources/app/node_modules"
@@ -22,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>Ember</string>
   <key>CFBundleIdentifier</key><string>local.ember.app</string>
   <key>CFBundleExecutable</key><string>Ember</string>
+  <key>CFBundleIconFile</key><string>Ember</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>

@@ -49,3 +49,4 @@ The server only listens on 127.0.0.1 and refuses requests from other origins.
 - `server.js` — index, search, resurfacing, link suggestions, tension detection, Claude calls
 - `public/` — the page: `index.html`, `app.js`, `style.css`
 - `mac/` — the Swift window and its build script
+- `public/logo.svg` — the logo. After changing it, run `swift mac/icon.swift` to remake the app icon, then rebuild

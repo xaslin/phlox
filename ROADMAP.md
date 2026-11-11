@@ -15,8 +15,8 @@ The scheduled "Ember: one improvement" run takes the first unchecked item, finis
 - [ ] **Graph filters.** Toggle folders on and off from the legend; drag a dot to pin it.
 - [ ] **Better "reads like".** Add two-word phrases to the similarity index and compare the Connect list before and after on the real vault.
 - [ ] **Unfinished work view.** List notes that say something is empty, blocked, paused or still to do, newest first.
-- [ ] **App icon.** Give `Ember.app` an icon, generated from the flame mark in `public/index.html`.
 
 ## Done
 
+- [x] Logo and app icon: `public/logo.svg`, rendered to `mac/Ember.icns` by `swift mac/icon.swift` (2026-11-11)
 - [x] First version: Today, Connect, Tensions, Graph, Ask, Digest, Settings, Mac window (2026-11-11)

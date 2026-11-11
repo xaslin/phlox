@@ -39,7 +39,7 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .shell { display: grid; grid-template-columns: 272px minmax(0, 1fr); height: 100vh; }
 .side { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; padding: 16px 12px 12px; }
-.brand { display: flex; align-items: center; gap: 8px; color: var(--accent); font: 600 20px var(--serif); padding: 2px 8px 14px; }
+.brand { display: flex; align-items: center; gap: 6px; color: var(--accent); font: 600 20px var(--serif); padding: 2px 8px 14px; }
 .brand:hover { text-decoration: none; }
 .brand span { color: var(--text); letter-spacing: .01em; }
 .search { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; color: var(--muted); }
