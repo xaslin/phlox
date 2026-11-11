@@ -697,7 +697,7 @@ const routes = {
   "GET /api/tensions": () => ({ tensions: tensions(), hasKey: Boolean(apiKey()) }),
   "POST /api/tensions/deep": async () => ({ findings: await deepTensions() }),
   "GET /api/graph": () => ({
-    nodes: notes.map((n) => ({ id: n.path, title: n.title, group: n.folder.split("/")[0] || "Home", degree: n.in.length + n.out.length })),
+    nodes: notes.map((n) => ({ id: n.path, title: n.title, group: n.folder.split("/")[0] || "Home", degree: n.in.length + n.out.length, inn: n.in.length, out: n.out.length, words: n.words, created: n.created, excerpt: n.excerpt.slice(0, 190) })),
     edges: notes.flatMap((n) => n.out.map((p) => [n.path, p])),
   }),
   "GET /api/search": (q) => ({ hits: search(q.get("q") || "") }),

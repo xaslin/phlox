@@ -9,6 +9,7 @@ Local-first notes with a memory. Ember reads a folder of Markdown files (an Obsi
 | Tensions | Passages that give different numbers for the same thing. | No |
 | Tensions, deeper read | Disagreements that are not about numbers. | Yes |
 | Graph | Every note and link. | No |
+| Sphere | The same notes and links on a 3D globe you can spin, with a details panel for the note you click. | No |
 | Ask | A question answered from your notes, with citations. | Yes |
 | Digest | Turns a pasted source into a summary note plus one note per idea. | Yes |
 

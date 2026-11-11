@@ -163,3 +163,30 @@ h3.section { font: 600 13px var(--sans); text-transform: uppercase; letter-spaci
   .pair, .versus, .below { grid-template-columns: minmax(0, 1fr); }
   .pair .mid { text-align: left; }
 }
+
+/* sphere: always dark, whatever the theme */
+.sphere { container-type: inline-size; position: relative; border-radius: 16px; overflow: hidden; background: #070504; border: 1px solid #3a2a1c; height: min(78vh, 760px); min-height: 460px; color: #f0e4d4; }
+#sphere { display: block; width: 100%; height: 100%; cursor: grab; }
+.hud { position: absolute; font: 12px/1.45 var(--mono); letter-spacing: .02em; }
+.hud-left { top: 26px; left: 26px; width: 178px; }
+.hud-right { top: 26px; right: 26px; width: 250px; max-height: calc(100% - 80px); overflow: auto; background: rgba(16, 11, 8, .72); border: 1px solid rgba(240, 160, 90, .28); border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(6px); }
+.hud-foot { left: 0; right: 0; bottom: 16px; text-align: center; color: rgba(255, 200, 150, .7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 44px; pointer-events: none; }
+.hud-title { color: rgba(255, 190, 130, .75); text-transform: uppercase; letter-spacing: .16em; font-size: 10.5px; margin: 0 0 6px; }
+.hud-right .hud-title:not(:first-child) { margin-top: 12px; }
+.hud-row { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; color: #e8dccb; padding: 3px 6px; border-radius: 6px; cursor: pointer; font: inherit; text-align: left; }
+.hud-row:hover, .hud-row.on { background: rgba(240, 160, 90, .16); }
+.hud-row b { margin-left: auto; color: rgba(255, 200, 150, .7); font-weight: 400; }
+.hud i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 8px currentColor; }
+.hud-right h3 { font: 600 18px/1.25 var(--serif); margin: 0 0 4px; color: #fff; letter-spacing: 0; }
+.hud-right p { font: 13px/1.5 var(--sans); margin: 8px 0 0; color: #d9ccba; letter-spacing: 0; }
+.hud-meta { color: rgba(255, 200, 150, .7); }
+.hud-big { font: 600 34px/1.1 var(--serif); color: #fff; margin-bottom: 8px; letter-spacing: 0; }
+.hud-big small { font: 12px var(--mono); color: rgba(255, 200, 150, .7); margin-left: 8px; }
+.hud-links { display: grid; gap: 1px; }
+.hud-links button { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: #e8dccb; font: 12.5px var(--sans); padding: 3px 4px; border-radius: 5px; cursor: pointer; text-align: left; letter-spacing: 0; }
+.hud-links button:hover { background: rgba(240, 160, 90, .16); }
+.hud-open { display: inline-block; margin-top: 12px; color: #ffb066; font: 600 13px var(--sans); letter-spacing: 0; }
+@container (max-width: 700px) {
+  .hud-left { display: none; }
+  .hud-right { left: 12px; right: 12px; top: auto; bottom: 44px; width: auto; max-height: 34%; }
+}
