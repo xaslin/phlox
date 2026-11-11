@@ -23,8 +23,10 @@ function readJSON(file, fallback) {
   }
 }
 const cfg = readJSON(CONFIG_FILE, {});
-const firstRun = !cfg.vault;
-if (firstRun) cfg.vault = process.env.EMBER_VAULT || path.resolve(HERE, "..", "vault");
+const firstRun = !cfg.vault && !process.env.EMBER_VAULT;
+// EMBER_VAULT points one run at another folder (tests use a temporary copy) without changing the saved setting.
+if (process.env.EMBER_VAULT) cfg.vault = path.resolve(process.env.EMBER_VAULT);
+else if (firstRun) cfg.vault = path.resolve(HERE, "..", "vault");
 function saveConfig() {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 });
