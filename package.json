@@ -1,0 +1,13 @@
+{
+  "name": "ember",
+  "version": "0.1.0",
+  "description": "Local-first notes with a memory: resurface, connect, and question a folder of Markdown files.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest"
+  }
+}
