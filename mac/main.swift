@@ -20,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
         window.title = "Ember"
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = NSColor(red: 0.039, green: 0.035, blue: 0.059, alpha: 1)
+        web.setValue(false, forKey: "drawsBackground") // no white flash before the page paints
         window.minSize = NSSize(width: 520, height: 420)
         window.contentView = web
         window.setFrameAutosaveName("EmberMain")
@@ -83,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     func show(_ message: String) {
         let safe = message.replacingOccurrences(of: "<", with: "&lt;")
-        web.loadHTMLString("<body style='font:16px -apple-system;padding:60px;color:#555'><h2>Ember could not open</h2><p>\(safe)</p></body>", baseURL: nil)
+        web.loadHTMLString("<body style='font:16px -apple-system;padding:60px;color:#bdb7d1;background:#0a090f'><h2>Ember could not open</h2><p>\(safe)</p></body>", baseURL: nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -117,6 +121,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
         completionHandler(alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil)
+    }
+    // window.confirm, used before throwing away unsaved edits.
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Keep editing")
+        completionHandler(alert.runModal() == .alertFirstButtonReturn)
     }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {

@@ -1,0 +1,209 @@
+// Smoke test: starts Ember on a spare port against a throwaway folder of made-up notes
+// and checks every endpoint that does not call Claude. Run with `npm test`.
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import http from "node:http";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PORT = 4399;
+const BASE = `http://127.0.0.1:${PORT}`;
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ember-test-"));
+const vault = path.join(tmp, "vault");
+
+const files = {
+  "Home.md": "---\ntags: [map]\n---\n\n# Home\n\nStart at [[Sourdough]] or [[Bike Tour]].\n",
+  "Inbox.md": "---\ntags: [inbox]\n---\n\n# Inbox\n",
+  "Cooking/Sourdough.md":
+    "---\ntags: [recipe, bread]\ncreated: 2025-01-10\n---\n\n# Sourdough\n\nA wet dough with long fermentation gives the loaf an open crumb and a sour flavour that keeps for days.\n\n## Timing\n\nThe starter needs 35 days before it is strong enough to raise a loaf.\n\nMost bakers say the starter takes 42 days to mature fully.\n\n- [ ] Buy rye flour\n- [x] Feed the starter\n\nSee [[Starter Care|how to feed it]] and [[Missing Note]].\n",
+  "Cooking/Starter Care.md":
+    "---\ntags:\n  - recipe\n  - bread\ncreated: 2025-02-01\n---\n\n# Starter Care\n\nFeed the starter with equal parts flour and water every day. Fermentation slows in a cold kitchen, so keep the jar somewhere warm and the dough will rise.\n",
+  "Cooking/Rye Loaf.md":
+    "---\ntags: [recipe]\ncreated: 2025-03-05\n---\n\n# Rye Loaf\n\nRye flour makes a dense loaf. The dough ferments quickly and the starter should be fed the night before baking so fermentation is active and the crumb stays moist.\n",
+  "Trips/Bike Tour.md":
+    "---\ntags: [trip]\ncreated: 2025-04-12\n---\n\n# Bike Tour\n\nThree days along the river trail with panniers, a tent and a small stove. The route climbs gently and ends at the old mill, where the campsite has water and a shelter.\n",
+  "Trips/Packing List.md":
+    "---\ntags: [trip]\r\ncreated: 2025-04-13\n---\n\n# Packing List\n\nTent, stove, panniers, spare tube and a pump for the river trail. Pack the stove fuel separately and keep the tent at the top of the panniers for a quick campsite setup.\n",
+};
+for (const [rel, text] of Object.entries(files)) {
+  fs.mkdirSync(path.dirname(path.join(vault, rel)), { recursive: true });
+  fs.writeFileSync(path.join(vault, rel), text);
+}
+fs.writeFileSync(path.join(tmp, "secret.md"), "outside the vault\n");
+
+let passed = 0;
+const failures = [];
+function check(name, ok, detail = "") {
+  if (ok) passed++;
+  else failures.push(`${name}${detail ? " — " + detail : ""}`);
+}
+async function call(method, url, body, headers = {}) {
+  const res = await fetch(BASE + url, {
+    method,
+    headers: body !== undefined ? { "content-type": "application/json", ...headers } : headers,
+    body: body !== undefined ? (typeof body === "string" ? body : JSON.stringify(body)) : undefined,
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {}
+  return { status: res.status, data };
+}
+// fetch refuses to set Host, so this one goes through http directly
+const rawGet = (pathname, headers) =>
+  new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port: PORT, path: pathname, method: "GET", headers }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res.statusCode));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+
+const env = { ...process.env, EMBER_PORT: String(PORT), EMBER_VAULT: vault, HOME: tmp };
+delete env.ANTHROPIC_API_KEY;
+const server = spawn(process.execPath, [path.join(HERE, "..", "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
+let log = "";
+server.stdout.on("data", (d) => (log += d));
+server.stderr.on("data", (d) => (log += d));
+
+async function waitUp() {
+  for (let i = 0; i < 60; i++) {
+    try {
+      if ((await fetch(BASE + "/api/settings")).ok) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("server did not start:\n" + log);
+}
+
+async function run() {
+  await waitUp();
+  const read = (rel) => fs.readFileSync(path.join(vault, rel), "utf8");
+  const note = (rel) => call("GET", "/api/note?path=" + encodeURIComponent(rel));
+
+  // index
+  let r = await call("GET", "/api/notes");
+  check("lists every note", r.data.notes.length === 7, `got ${r.data.notes.length}`);
+  const care = r.data.notes.find((n) => n.title === "Starter Care");
+  check("reads block-style tag lists", care && care.tags.join() === "recipe,bread", JSON.stringify(care && care.tags));
+  const pack = r.data.notes.find((n) => n.title === "Packing List");
+  check("reads frontmatter with Windows line ends", pack && pack.created === "2025-04-13" && pack.tags.join() === "trip", JSON.stringify(pack));
+
+  // one note
+  r = await note("Cooking/Sourdough.md");
+  check("opens a note", r.status === 200 && r.data.title === "Sourdough");
+  check("note has backlinks", r.data.backlinks.some((b) => b.title === "Home"));
+  check("note has related notes", r.data.related.some((x) => x.title === "Rye Loaf"));
+  check("alias links resolve", r.data.related.find((x) => x.title === "Starter Care")?.linked === true);
+  check("missing note is a 404", (await note("Nope.md")).status === 404);
+  check("note without a path is a 404", (await call("GET", "/api/note")).status === 404);
+
+  // search
+  r = await call("GET", "/api/search?q=" + encodeURIComponent("river trail"));
+  check("search finds by body", r.data.hits[0] && ["Bike Tour", "Packing List"].includes(r.data.hits[0].title));
+  r = await call("GET", "/api/search?q=sourdough");
+  check("search finds by title", r.data.hits[0]?.title === "Sourdough");
+  check("empty search is empty", (await call("GET", "/api/search?q=")).data.hits.length === 0);
+  check("search survives odd input", (await call("GET", "/api/search?q=" + encodeURIComponent("((%%[["))).status === 200);
+
+  // today
+  r = await call("GET", "/api/today");
+  check("today picks up to three notes", r.data.picks.length === 3, `got ${r.data.picks.length}`);
+  check("today never picks hubs", !r.data.picks.some((p) => ["Home", "Inbox"].includes(p.title)));
+  const first = r.data.picks.map((p) => p.path).join();
+  check("today is stable within a day", (await call("GET", "/api/today")).data.picks.map((p) => p.path).join() === first);
+  check("today counts notes and links", r.data.stats.notes === 7 && r.data.stats.links >= 3);
+
+  // connect and link
+  r = await call("GET", "/api/connect");
+  const pair = r.data.pairs.find((p) => [p.a.title, p.b.title].sort().join() === "Bike Tour,Packing List");
+  check("connect suggests an unlinked pair", Boolean(pair), JSON.stringify(r.data.pairs.map((p) => [p.a.title, p.b.title])));
+  if (pair) {
+    r = await call("POST", "/api/link", { from: pair.a.path, to: pair.b.path });
+    check("link adds a See also line", r.status === 200 && read(pair.a.path).includes(`See also: [[${pair.b.title}]]`));
+    await call("POST", "/api/link", { from: pair.a.path, to: pair.b.path });
+    check("linking twice adds one link", read(pair.a.path).split(`[[${pair.b.title}]]`).length === 2);
+    r = await call("GET", "/api/connect");
+    check("linked pair leaves the list", !r.data.pairs.some((p) => p.id === pair.id));
+  }
+  check("link to a missing note is a 404", (await call("POST", "/api/link", { from: "Home.md", to: "Nope.md" })).status === 404);
+  r = await call("GET", "/api/connect");
+  if (r.data.pairs[0]) {
+    const id = r.data.pairs[0].id;
+    await call("POST", "/api/dismiss", { id });
+    check("dismissed pair stays away", !(await call("GET", "/api/connect")).data.pairs.some((p) => p.id === id));
+  }
+
+  // tensions
+  r = await call("GET", "/api/tensions");
+  const t = r.data.tensions.find((x) => [x.a.value, x.b.value].sort().join() === "35,42");
+  check("tensions finds 35 against 42 days", Boolean(t), JSON.stringify(r.data.tensions.map((x) => [x.a.value, x.b.value, x.unit])));
+  check("tensions reports no key", r.data.hasKey === false);
+
+  // capture
+  r = await call("POST", "/api/capture", { text: "Try a longer proof" });
+  check("capture writes to the inbox", r.status === 200 && read("Inbox.md").includes("Try a longer proof"));
+  await call("POST", "/api/capture", { text: "Second thought" });
+  const inbox = read("Inbox.md");
+  check("newest capture goes first", inbox.indexOf("Second thought") < inbox.indexOf("Try a longer proof"));
+  check("capture stamps date and time", /\n## \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n/.test(inbox), inbox);
+  check("empty capture is refused", (await call("POST", "/api/capture", { text: "   " })).status === 400);
+
+  // create and edit
+  r = await call("POST", "/api/note", { title: "Oven: notes / 2025?" });
+  check("create cleans the title", r.status === 200 && r.data.path === "Oven notes 2025.md", JSON.stringify(r.data));
+  r = await call("POST", "/api/note", { title: "Sourdough" });
+  check("create never overwrites", r.data.path === "Sourdough 2.md" && read("Cooking/Sourdough.md").includes("open crumb"));
+  r = await call("POST", "/api/note", { title: "" });
+  check("create without a name still works", r.status === 200 && r.data.path.startsWith("Untitled"));
+  r = await call("PUT", "/api/note", { path: "Oven notes 2025.md", raw: "# Oven\n\nRuns 15 degrees hot. See [[Sourdough]]." });
+  check("edit saves", r.status === 200 && read("Oven notes 2025.md").endsWith("See [[Sourdough]].\n"));
+  r = await note("Cooking/Sourdough.md");
+  check("edit updates backlinks", r.data.backlinks.some((b) => b.title === "Oven notes 2025"));
+  check("edit of a missing note is a 404", (await call("PUT", "/api/note", { path: "Nope.md", raw: "x" })).status === 404);
+  check("edit without text is refused", (await call("PUT", "/api/note", { path: "Home.md" })).status === 400);
+
+  // graph
+  r = await call("GET", "/api/graph");
+  const ids = new Set(r.data.nodes.map((n) => n.id));
+  check("graph has a node per note", r.data.nodes.length === (await call("GET", "/api/notes")).data.notes.length);
+  check("graph edges point at real nodes", r.data.edges.length > 0 && r.data.edges.every(([a, b]) => ids.has(a) && ids.has(b)));
+
+  // staying inside the folder and on this machine
+  check("cannot edit outside the vault", (await call("PUT", "/api/note", { path: "../secret.md", raw: "changed" })).status === 404);
+  await call("POST", "/api/note", { title: "x", folder: "../../escape" });
+  check("cannot create outside the vault", !fs.existsSync(path.join(tmp, "escape")) && fs.readFileSync(path.join(tmp, "secret.md"), "utf8") === "outside the vault\n");
+  check("cannot read outside public", (await rawGet("/../server.js", { host: `127.0.0.1:${PORT}` })) === 404);
+  check("cannot read outside public, encoded", (await rawGet("/%2e%2e/server.js", { host: `127.0.0.1:${PORT}` })) === 404);
+  check("refuses other hosts", (await rawGet("/api/notes", { host: "evil.example" })) === 403);
+  check("refuses other origins", (await call("GET", "/api/notes", undefined, { origin: "https://evil.example" })).status === 403);
+  check("refuses non-JSON posts", (await fetch(BASE + "/api/capture", { method: "POST", body: "text=hi", headers: { "content-type": "text/plain" } })).status === 415);
+  check("refuses broken JSON", (await call("POST", "/api/capture", "{nope")).status === 400);
+  check("unknown route is a 404", (await call("GET", "/api/nothing")).status === 404);
+
+  // the page
+  for (const f of ["/", "/app.js", "/style.css", "/logo.svg"]) check(`serves ${f}`, (await fetch(BASE + f)).status === 200);
+
+  // Claude features without a key: refused before anything is sent
+  check("ask needs a key", (await call("POST", "/api/ask", { question: "what about bread?" })).status === 409);
+  check("deep read needs a key", (await call("POST", "/api/tensions/deep", {})).status === 409);
+  check("digest refuses short text", (await call("POST", "/api/digest", { text: "too short" })).status === 400);
+
+  check("reindex re-reads the folder", (await call("POST", "/api/reindex", {})).data.notes >= 9);
+  check("server printed no errors", !/Error|at .*server\.js/.test(log), log);
+}
+
+try {
+  await run();
+} catch (err) {
+  failures.push("test run crashed — " + (err.stack || err));
+} finally {
+  server.kill();
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+console.log(`${passed} passed, ${failures.length} failed`);
+for (const f of failures) console.log("  ✗ " + f);
+process.exit(failures.length ? 1 : 0);

@@ -68,17 +68,30 @@ function tokens(text) {
 }
 function parseFrontmatter(raw) {
   const fm = {};
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?/);
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
   if (!m) return { fm, body: raw };
-  for (const line of m[1].split("\n")) {
+  let listKey = null; // a key whose value is a YAML block list on the lines below it
+  for (const line of m[1].split(/\r?\n/)) {
+    const item = line.match(/^\s*-\s+(.*)$/);
+    if (item && listKey) {
+      fm[listKey].push(item[1].trim().replace(/^["'](.*)["']$/, "$1"));
+      continue;
+    }
     const i = line.indexOf(":");
     if (i < 0) continue;
     const k = line.slice(0, i).trim();
     let v = line.slice(i + 1).trim();
-    if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1).split(",").map((s) => s.trim()).filter(Boolean);
-    else v = v.replace(/^"(.*)"$/, "$1");
+    listKey = null;
+    if (!v) {
+      fm[k] = [];
+      listKey = k;
+      continue;
+    }
+    if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1).split(",").map((s) => s.trim().replace(/^["'](.*)["']$/, "$1")).filter(Boolean);
+    else v = v.replace(/^["'](.*)["']$/, "$1");
     fm[k] = v;
   }
+  for (const k of Object.keys(fm)) if (Array.isArray(fm[k]) && !fm[k].length && k !== "tags") fm[k] = "";
   return { fm, body: raw.slice(m[0].length) };
 }
 function plain(md) {
@@ -137,10 +150,10 @@ function buildIndex() {
       path: rel,
       title,
       folder: rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "",
-      tags: Array.isArray(fm.tags) ? fm.tags : fm.tags ? [fm.tags] : [],
-      source: fm.source || "",
-      created: fm.created || stat.mtime.toISOString().slice(0, 10),
-      dated: Boolean(fm.created),
+      tags: (Array.isArray(fm.tags) ? fm.tags : fm.tags ? String(fm.tags).split(/[\s,]+/) : []).map((t) => String(t).replace(/^#/, "")).filter(Boolean),
+      source: typeof fm.source === "string" ? fm.source : "",
+      created: /^\d{4}-\d{2}-\d{2}/.test(fm.created) ? fm.created.slice(0, 10) : stat.mtime.toISOString().slice(0, 10),
+      dated: /^\d{4}-\d{2}-\d{2}/.test(fm.created),
       raw,
       body,
       words: plain(body).split(" ").length,
@@ -237,7 +250,8 @@ function daysBetween(a, b) {
 }
 function pickToday() {
   const date = today();
-  const pool = notes.filter((n) => !isHub(n) && n.words > 40);
+  let pool = notes.filter((n) => !isHub(n) && n.words > 40);
+  if (pool.length < 3) pool = notes.filter((n) => !isHub(n)); // a small folder: short notes are better than none
   let paths = state.shown[date];
   if (!paths || paths.some((p) => !byPath.has(p))) {
     const recent = new Set(Object.entries(state.shown).filter(([d]) => daysBetween(d, date) <= 6).flatMap(([, v]) => v));
@@ -746,7 +760,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, await handler(url.searchParams, body));
     }
     const file = path.join(HERE, "public", url.pathname === "/" ? "index.html" : path.normalize(url.pathname));
-    if (!file.startsWith(path.join(HERE, "public")) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) throw httpError(404, "Not found");
+    if (!file.startsWith(path.join(HERE, "public") + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) throw httpError(404, "Not found");
     res.writeHead(200, { "content-type": MIME[path.extname(file)] || "application/octet-stream", "cache-control": "no-store" });
     fs.createReadStream(file).pipe(res);
   } catch (err) {

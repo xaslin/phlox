@@ -15,6 +15,12 @@ Local-first notes with a memory. Ember reads a folder of Markdown files (an Obsi
 | Ask | A question answered from your notes, with citations. | Yes |
 | Digest | Turns a pasted source into a summary note plus one note per idea. | Yes |
 
+Around those screens:
+
+- **⌘K** opens a palette: type a note's name to jump to it, or some words to search inside every note. It also creates notes.
+- **A note** shows its outline, what links to it and what reads like it beside the text. Checkboxes can be ticked in place, and tags open a list of every note that carries them.
+- **Editing** (⌘E) shows a live preview next to the Markdown. ⌘S saves, and leaving with unsaved changes asks first.
+
 ## Run it
 
 ```bash
@@ -26,6 +32,14 @@ npm start
 ```
 
 Then open http://127.0.0.1:4317.
+
+## Test it
+
+```bash
+npm test
+```
+
+This starts the server on a spare port against a throwaway folder of made-up notes and checks every endpoint that does not call Claude. It never touches your own notes or settings.
 
 ## Mac app
 
@@ -52,6 +66,7 @@ The server only listens on 127.0.0.1 and refuses requests from other origins.
 - `server.js` — index, search, resurfacing, link suggestions, tension detection, Claude calls
 - `public/` — the page: `index.html`, `app.js`, `style.css`
 - `mac/` — the Swift window and its build script
+- `test/smoke.mjs` — the test run by `npm test`
 - `public/logo.svg` — the logo. After changing it, run `swift mac/icon.swift` to remake the app icon, then rebuild
 
 ## License
