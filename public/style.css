@@ -1,4 +1,4 @@
-/* Phlox. Flat and quiet: greys, hairlines, one violet. The sphere is the only place that glows. */
+/* Phlox. Flat and quiet: greys, hairlines, one violet. The sphere is drawn in lines. */
 :root {
   color-scheme: dark;
   --bg: #101011;
@@ -232,12 +232,12 @@ mark { background: rgba(164, 139, 245, .28); color: inherit; border-radius: 2px;
   #vaultstat { display: none; }
 }
 
-/* sphere: the one screen that is allowed to show off */
-.sphere { container-type: inline-size; position: relative; border-radius: 6px; overflow: hidden; background: #05040a; border: 1px solid var(--line); height: calc(100vh - 190px); min-height: 440px; color: #ece6fb; }
+/* sphere: line drawing of the vault, one ringed patch per section */
+.sphere { container-type: inline-size; position: relative; border-radius: 6px; overflow: hidden; background: #0b0b0d; border: 1px solid var(--line); height: calc(100vh - 190px); min-height: 440px; color: #ece6fb; }
 #sphere { display: block; width: 100%; height: 100%; cursor: grab; }
 .hud { position: absolute; font: 12px/1.45 var(--mono); }
 .hud-left { top: 24px; left: 24px; width: 178px; }
-.hud-right { top: 24px; right: 24px; width: 250px; max-height: calc(100% - 76px); overflow: auto; background: rgba(12, 10, 20, .78); border: 1px solid rgba(167, 139, 250, .28); border-radius: 6px; padding: 12px 14px; }
+.hud-right { top: 24px; right: 24px; width: 250px; max-height: calc(100% - 76px); overflow: auto; background: rgba(16, 16, 17, .9); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
 .hud-foot { left: 0; right: 0; bottom: 14px; text-align: center; color: rgba(196, 181, 253, .7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 44px; pointer-events: none; }
 .hud-title { color: rgba(196, 181, 253, .75); text-transform: uppercase; letter-spacing: .14em; font-size: 10.5px; margin: 0 0 6px; }
 .hud-right .hud-title:not(:first-child) { margin-top: 12px; }
@@ -253,6 +253,7 @@ mark { background: rgba(164, 139, 245, .28); color: inherit; border-radius: 2px;
 .hud-links { display: grid; gap: 1px; }
 .hud-links button { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: #e2dbf5; font: 12.5px var(--sans); padding: 3px 4px; border-radius: 4px; cursor: pointer; text-align: left; }
 .hud-links button:hover { background: rgba(167, 139, 250, .18); }
+.hud-back { border: 0; background: none; padding: 0; cursor: pointer; }
 .hud-open { display: inline-block; margin-top: 12px; color: #c4b5fd; font: 600 13px var(--sans); }
 @container (max-width: 700px) {
   .hud-left { display: none; }

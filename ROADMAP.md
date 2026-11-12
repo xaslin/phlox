@@ -17,6 +17,7 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 - [x] Briefing on Today, Tasks screen, daily note, read aloud (2026-11-12)
 - [x] Unlinked mentions, notes two links away, hover previews, `[[` autocomplete, click-to-create links (2026-11-12)
 - [x] Outside edits are noticed; route tracing on the Sphere (2026-11-12)
+- [x] Sphere drawn in lines, one ringed patch per section, click a section to pull it up (2026-11-12)
 - [x] Tags: click a tag to list every note carrying it (2026-11-12)
 - [x] Quick switcher: ⌘K palette that jumps to notes, searches inside them and creates notes (2026-11-12)
 - [x] Editing and linking clicked through in the page; note side column, live preview, tickable checkboxes, unsaved-changes prompt (2026-11-12)

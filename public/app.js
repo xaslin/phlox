@@ -840,7 +840,8 @@ async function viewGraph(live) {
 }
 
 // ───────────── sphere ─────────────
-// The whole vault on a globe: one point per note, one arc per link. Drawn on a 2D canvas with its own projection.
+// The whole vault on a globe, drawn in lines: each section of notes has its own ringed patch, and every link is a line.
+// Drawn on a 2D canvas with its own projection.
 async function viewSphere(live) {
   const g = await api("/api/graph");
   if (!live()) return;
@@ -854,14 +855,36 @@ async function viewSphere(live) {
       <div class="hud hud-left" id="hudl"></div>
       <div class="hud hud-right" id="hudr"></div>
       <div class="hud hud-foot" id="hudf"></div>
-    </div>`, { cls: "wide", title: "<b>Sphere</b>", stat: "Drag to spin · scroll to zoom · click a point · shift-click a second one to trace the route · double-click to open" });
+    </div>`, { cls: "wide", title: "<b>Sphere</b>", stat: "Drag to spin · scroll to zoom · click a section name to pull it up · click a point · shift-click a second one to trace the route · double-click to open" });
   const cv = $("#sphere"), ctx = cv.getContext("2d");
   const N = g.nodes.length, GA = Math.PI * (3 - Math.sqrt(5));
-  const sorted = [...g.nodes].sort((a, b) => a.group.localeCompare(b.group) || a.title.localeCompare(b.title));
-  const nodes = sorted.map((n, i) => {
-    const y = 1 - (2 * (i + 0.5)) / N, r = Math.sqrt(1 - y * y), phi = i * GA;
-    return { ...n, p: [Math.cos(phi) * r, y, Math.sin(phi) * r], s: [0, 0, 0, 1] };
+  // Each section gets a patch of the globe sized to how many notes it holds; patches are nudged apart so they never touch.
+  const norm = (v) => { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const members = Object.fromEntries(groups.map((k) => [k, g.nodes.filter((n) => n.group === k).sort((a, b) => a.title.localeCompare(b.title))]));
+  const patch = groups.map((k, i) => {
+    const y = 1 - (2 * (i + 0.5)) / groups.length, r = Math.sqrt(1 - y * y), phi = i * GA;
+    return { k, c: [Math.cos(phi) * r, y, Math.sin(phi) * r], a: Math.acos(1 - 2 * Math.min(0.45, (members[k].length / N) * 0.5)) + 0.05 };
   });
+  for (let pass = 0; pass < 300; pass++) {
+    for (let i = 0; i < patch.length; i++) for (let j = i + 1; j < patch.length; j++) {
+      const A = patch[i], B = patch[j];
+      const gap = Math.acos(Math.max(-1, Math.min(1, A.c[0] * B.c[0] + A.c[1] * B.c[1] + A.c[2] * B.c[2])));
+      const want = A.a + B.a + 0.1;
+      if (gap >= want) continue;
+      const push = (want - gap) * 0.2, d = norm([A.c[0] - B.c[0] + 1e-6, A.c[1] - B.c[1], A.c[2] - B.c[2]]);
+      A.c = norm([A.c[0] + d[0] * push, A.c[1] + d[1] * push, A.c[2] + d[2] * push]);
+      B.c = norm([B.c[0] - d[0] * push, B.c[1] - d[1] * push, B.c[2] - d[2] * push]);
+    }
+  }
+  const around = (P, ang, turn) => { // a point `ang` radians from the middle of a patch, in direction `turn`
+    const u = norm(cross(P.c, Math.abs(P.c[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0])), v = cross(P.c, u);
+    const ca = Math.cos(ang), sa = Math.sin(ang), ct = Math.cos(turn), st = Math.sin(turn);
+    return [P.c[0] * ca + (u[0] * ct + v[0] * st) * sa, P.c[1] * ca + (u[1] * ct + v[1] * st) * sa, P.c[2] * ca + (u[2] * ct + v[2] * st) * sa];
+  };
+  const patchOf = Object.fromEntries(patch.map((P) => [P.k, P]));
+  const nodes = patch.flatMap((P) => members[P.k].map((n, i, all) =>
+    ({ ...n, p: around(P, (P.a - 0.05) * Math.sqrt((i + 0.5) / all.length), i * GA), s: [0, 0, 0, 1] })));
   const idx = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
   const edges = g.edges.map(([a, b]) => [idx[a], idx[b]]).filter(([a, b]) => a !== undefined && b !== undefined);
   const near = nodes.map(() => new Set());
@@ -892,9 +915,9 @@ async function viewSphere(live) {
   function drawHud() {
     const counts = Object.fromEntries(groups.map((k) => [k, 0]));
     nodes.forEach((n) => counts[n.group]++);
-    $("#hudl").innerHTML = `<div class="hud-title">Sectors</div>` + groups.map((k) =>
+    $("#hudl").innerHTML = `<div class="hud-title">Sections</div>` + groups.map((k) =>
       `<button class="hud-row${onlyGroup === k ? " on" : ""}" data-group="${esc(k)}"><i style="background:${color[k]}"></i>${esc(label(k))}<b>${counts[k]}</b></button>`).join("");
-    $("#hudl").querySelectorAll("[data-group]").forEach((b) => (b.onclick = () => { onlyGroup = onlyGroup === b.dataset.group ? null : b.dataset.group; drawHud(); }));
+    $("#hudl").querySelectorAll("[data-group]").forEach((b) => (b.onclick = () => pull(onlyGroup === b.dataset.group ? null : b.dataset.group)));
     const n = picked !== null ? nodes[picked] : null;
     $("#hudr").innerHTML = n ? `
       <div class="hud-title" style="color:${color[n.group]}">${esc(label(n.group))}</div>
@@ -905,12 +928,27 @@ async function viewSphere(live) {
       <div class="hud-title">Linked</div>
       <div class="hud-links">${[...near[picked]].slice(0, 9).map((j) => `<button data-go="${j}"><i style="background:${color[nodes[j].group]}"></i>${esc(nodes[j].title)}</button>`).join("") || "<span>Nothing yet</span>"}</div>
       <a class="hud-open" href="${href(n.id)}">Open note →</a>
-      <div class="hud-meta" style="margin-top:8px">Shift-click another point to trace how the two connect.</div>` : `
+      <div class="hud-meta" style="margin-top:8px">Shift-click another point to trace how the two connect.</div>` : onlyGroup ? `
+      <div class="hud-title" style="color:${color[onlyGroup]}">${esc(label(onlyGroup))} · ${members[onlyGroup].length} notes</div>
+      <div class="hud-links">${members[onlyGroup].map((m) => `<button data-go="${idx[m.id]}" title="${esc(m.excerpt)}">${esc(m.title)}</button>`).join("")}</div>
+      <button class="hud-open hud-back" id="hud-all">← All sections</button>` : `
       <div class="hud-title">Vault</div>
       <div class="hud-big">${N}<small>notes</small></div>
       <div class="hud-big">${edges.length}<small>links</small></div>
-      <div class="hud-meta">Click a point for its details.</div>`;
+      <div class="hud-meta">Click a section on the left to pull it up, or a point for its details.</div>`;
+    if ($("#hud-all")) $("#hud-all").onclick = () => pull(null);
     $("#hudr").querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => select(+b.dataset.go)));
+  }
+  // Pull one section up: turn the globe to it, fade the rest and list its notes.
+  function pull(k) {
+    onlyGroup = k;
+    picked = null; trail = []; trailSet = new Set();
+    if (k) {
+      const [x, y, z] = patchOf[k].c;
+      target = { y: Math.atan2(-x, z), x: Math.atan2(y, Math.hypot(x, z)) };
+      velY = 0; velX = 0;
+    }
+    drawHud();
   }
   function select(i) {
     picked = i;
@@ -970,21 +1008,14 @@ async function viewSphere(live) {
     rotX = Math.max(-1.35, Math.min(1.35, rotX));
 
     ctx.setTransform(d, 0, 0, d, 0, 0);
-    const bg = ctx.createRadialGradient(CX, CY, R * 0.2, CX, CY, Math.max(w, h) * 0.75);
-    bg.addColorStop(0, "#17122b"); bg.addColorStop(1, "#05040a");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-
-    // halo and rim
-    const halo = ctx.createRadialGradient(CX, CY, R * 0.85, CX, CY, R * 1.35);
-    halo.addColorStop(0, "rgba(139,92,246,0.16)"); halo.addColorStop(1, "rgba(139,92,246,0)");
-    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(CX, CY, R * 1.35, 0, 6.3); ctx.fill();
+    ctx.fillStyle = "#0b0b0d"; ctx.fillRect(0, 0, w, h);
 
     // latitude and longitude wires
     ctx.lineWidth = 1;
     const wire = (pts) => {
       for (let i = 1; i < pts.length; i++) {
         const a = pts[i - 1], b = pts[i];
-        ctx.strokeStyle = `rgba(167,139,250,${0.035 + Math.max(0, (a[2] + b[2]) / 2 + 0.2) * 0.1})`;
+        ctx.strokeStyle = `rgba(255,255,255,${0.025 + Math.max(0, (a[2] + b[2]) / 2 + 0.2) * 0.05})`;
         ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
       }
     };
@@ -1001,35 +1032,42 @@ async function viewSphere(live) {
       }
       wire(pts);
     }
-    // two orbit rings with a moving marker
-    [[1.16, 0.5, 0.004], [1.28, -0.35, -0.0025]].forEach(([rr, tilt, speed], ri) => {
-      ctx.strokeStyle = "rgba(167,139,250,0.16)"; ctx.setLineDash(ri ? [2, 7] : []);
-      ctx.beginPath(); ctx.ellipse(CX, CY, R * rr, R * rr * 0.32, tilt, 0, 6.3); ctx.stroke(); ctx.setLineDash([]);
-      const a = t * speed * 4, ex = Math.cos(a) * R * rr, ey = Math.sin(a) * R * rr * 0.32;
-      ctx.fillStyle = "#d8c7ff"; ctx.beginPath();
-      ctx.arc(CX + ex * Math.cos(tilt) - ey * Math.sin(tilt), CY + ex * Math.sin(tilt) + ey * Math.cos(tilt), 2.2, 0, 6.3); ctx.fill();
-    });
+    // a ring around each section, with its name
+    for (const P of patch) {
+      const dim = onlyGroup && onlyGroup !== P.k;
+      ctx.strokeStyle = color[P.k]; ctx.lineWidth = onlyGroup === P.k ? 1.6 : 1;
+      let last = null;
+      for (let a = 0; a <= 360; a += 6) {
+        const q = project(around(P, P.a, (a * Math.PI) / 180), R, w, h);
+        if (last) {
+          ctx.globalAlpha = (dim ? 0.12 : 0.75) * (0.15 + 0.85 * Math.max(0, Math.min(1, ((last[2] + q[2]) / 2 + 0.5) / 1.2)));
+          ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+        }
+        last = q;
+      }
+      const top = project(around(P, P.a + 0.07, Math.PI / 2), R, w, h);
+      if (top[2] > 0.05 && !dim) {
+        ctx.globalAlpha = Math.min(1, top[2] * 2.2);
+        ctx.font = "600 10.5px ui-monospace, SFMono-Regular, Menlo, monospace"; ctx.fillStyle = color[P.k]; ctx.textAlign = "center";
+        ctx.fillText(label(P.k).toUpperCase(), top[0], top[1]);
+        ctx.textAlign = "start";
+      }
+    }
+    ctx.globalAlpha = 1;
 
     nodes.forEach((n) => (n.s = project(n.p, R, w, h)));
     const focus = hover ?? picked;
 
-    // links: curves that dip toward the centre
+    // links: straight lines, in the section's colour when both ends share one
     for (const [i, j] of edges) {
       const a = nodes[i], b = nodes[j], on = focus !== null && (i === focus || j === focus);
       const groupOk = !onlyGroup || a.group === onlyGroup || b.group === onlyGroup;
-      const depth = (a.s[2] + b.s[2]) / 2;
-      const alpha = on ? 0.95 : (focus !== null || !groupOk ? 0.03 : 0.07 + Math.max(0, depth + 0.4) * 0.16);
-      const m = project([(a.p[0] + b.p[0]) * 0.36, (a.p[1] + b.p[1]) * 0.36, (a.p[2] + b.p[2]) * 0.36], R, w, h);
-      ctx.strokeStyle = on ? color[nodes[focus].group] : `rgba(196,181,253,${alpha})`;
-      ctx.globalAlpha = on ? alpha : 1;
-      ctx.lineWidth = on ? 1.4 : 0.7;
-      ctx.beginPath(); ctx.moveTo(a.s[0], a.s[1]); ctx.quadraticCurveTo(m[0], m[1], b.s[0], b.s[1]); ctx.stroke();
-      if (trailSet.size && (trailSet.has(i + "-" + j) || trailSet.has(j + "-" + i))) { ctx.strokeStyle = "#fff"; ctx.globalAlpha = 1; ctx.lineWidth = 2.2; ctx.stroke(); }
-      if (on) { // a pulse travelling along the link
-        const u = ((t * 0.012 + i * 0.37) % 1), v = 1 - u;
-        ctx.fillStyle = "#fff"; ctx.beginPath();
-        ctx.arc(v * v * a.s[0] + 2 * v * u * m[0] + u * u * b.s[0], v * v * a.s[1] + 2 * v * u * m[1] + u * u * b.s[1], 1.8, 0, 6.3); ctx.fill();
-      }
+      const depth = (a.s[2] + b.s[2]) / 2, same = a.group === b.group;
+      const onTrail = trailSet.size && (trailSet.has(i + "-" + j) || trailSet.has(j + "-" + i));
+      ctx.strokeStyle = onTrail ? "#fff" : on ? color[nodes[focus].group] : same ? color[a.group] : "#cfc8e6";
+      ctx.globalAlpha = onTrail || on ? 1 : trail.length || focus !== null || !groupOk ? 0.04 : (same ? 0.2 : 0.1) + Math.max(0, depth + 0.4) * (same ? 0.4 : 0.16);
+      ctx.lineWidth = onTrail ? 2.2 : on ? 1.5 : 0.8;
+      ctx.beginPath(); ctx.moveTo(a.s[0], a.s[1]); ctx.lineTo(b.s[0], b.s[1]); ctx.stroke();
     }
     ctx.globalAlpha = 1;
 
@@ -1037,17 +1075,15 @@ async function viewSphere(live) {
     const order = nodes.map((_, i) => i).sort((a, b) => nodes[a].s[2] - nodes[b].s[2]);
     for (const i of order) {
       const n = nodes[i], [x, y, z, k] = n.s, on = lit(i);
-      const r = (2.2 + Math.sqrt(n.degree) * 1.05) * k * Math.sqrt(zoom);
+      const r = (1.3 + Math.sqrt(n.degree) * 0.42) * k * Math.sqrt(zoom);
       ctx.globalAlpha = (on ? 1 : 0.14) * (0.3 + 0.7 * Math.max(0, Math.min(1, (z + 1) / 1.6)));
-      ctx.shadowColor = color[n.group]; ctx.shadowBlur = on && z > 0 ? 14 : 0;
       ctx.fillStyle = color[n.group];
       ctx.beginPath(); ctx.arc(x, y, r, 0, 6.3); ctx.fill();
-      ctx.shadowBlur = 0;
       if (i === picked || i === hover) {
         ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.globalAlpha = 1;
-        ctx.beginPath(); ctx.arc(x, y, r + 5 + Math.sin(t * 0.08) * 1.5, 0, 6.3); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, r + 5, 0, 6.3); ctx.stroke();
       }
-      const show = trail.includes(i) || i === focus || (focus !== null && near[focus].has(i) && z > -0.3) || (focus === null && on && z > 0.45 && n.degree >= 9);
+      const show = trail.includes(i) || i === focus || (focus !== null && near[focus].has(i) && z > -0.3) || (focus === null && on && z > 0.45 && n.degree >= 14) || (focus === null && onlyGroup === n.group && z > 0.2);
       if (show) {
         ctx.globalAlpha = i === focus ? 1 : 0.85;
         ctx.font = `${i === focus ? 600 : 400} ${i === focus ? 13 : 11}px -apple-system, sans-serif`;
@@ -1058,12 +1094,12 @@ async function viewSphere(live) {
     ctx.globalAlpha = 1;
 
     // corner brackets
-    ctx.strokeStyle = "rgba(167,139,250,0.5)"; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,0.22)"; ctx.lineWidth = 1;
     for (const [bx, by, sx, sy] of [[14, 14, 1, 1], [w - 14, 14, -1, 1], [14, h - 14, 1, -1], [w - 14, h - 14, -1, -1]]) {
       ctx.beginPath(); ctx.moveTo(bx + 18 * sx, by); ctx.lineTo(bx, by); ctx.lineTo(bx, by + 18 * sy); ctx.stroke();
     }
     const deg = (a) => String(Math.round((((a * 180) / Math.PI) % 360 + 360) % 360)).padStart(3, "0");
-    $("#hudf").textContent = `AZ ${deg(rotY)}°  ·  EL ${deg(rotX)}°  ·  ZOOM ${zoom.toFixed(2)}×  ·  ${focus !== null ? nodes[focus].title.toUpperCase() : onlyGroup ? label(onlyGroup).toUpperCase() : "ALL SECTORS"}`;
+    $("#hudf").textContent = `AZ ${deg(rotY)}°  ·  EL ${deg(rotX)}°  ·  ZOOM ${zoom.toFixed(2)}×  ·  ${focus !== null ? nodes[focus].title.toUpperCase() : onlyGroup ? label(onlyGroup).toUpperCase() : "ALL SECTIONS"}`;
     requestAnimationFrame(frame);
   }
 
@@ -1101,7 +1137,7 @@ async function viewSphere(live) {
   cv.ondblclick = (e) => { const i = pick(e); if (i !== null) location.hash = href(nodes[i].id); };
   cv.onwheel = (e) => { e.preventDefault(); zoom = Math.max(0.6, Math.min(2.4, zoom * (e.deltaY < 0 ? 1.08 : 0.93))); };
   stopGraph = () => (alive = false);
-  window.__sphere = { nodes, select, trace, trail: () => trail, state: () => ({ rotY, rotX, zoom, picked, hover, onlyGroup }) };
+  window.__sphere = { nodes, select, trace, pull, patch, trail: () => trail, state: () => ({ rotY, rotX, zoom, picked, hover, onlyGroup }) };
   drawHud();
   frame();
 }

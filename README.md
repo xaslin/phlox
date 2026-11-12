@@ -12,7 +12,7 @@ Local-first notes with a memory. Phlox reads a folder of Markdown files (an Obsi
 | Tensions | Passages that give different numbers for the same thing. | No |
 | Tensions, deeper read | Disagreements that are not about numbers. | Yes |
 | Graph | Every note and link. | No |
-| Sphere | The same notes and links on a 3D globe. Click a point for its details; shift-click a second one to trace the shortest chain of links between them. | No |
+| Sphere | The same notes and links on a 3D globe drawn in lines, with a ringed patch for each section. Click a section name to pull it up and list its notes; click a point for its details; shift-click a second one to trace the shortest chain of links between them. | No |
 | Ask | A question answered from your notes, with citations. | Yes |
 | Digest | Turns a pasted source into a summary note plus one note per idea. | Yes |
 
