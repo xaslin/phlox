@@ -1,27 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1c1630"/>
-      <stop offset="1" stop-color="#07060b"/>
-    </linearGradient>
-    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#e9d5ff"/>
-      <stop offset="0.55" stop-color="#a855f7"/>
-      <stop offset="1" stop-color="#5b21b6"/>
-    </linearGradient>
-    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#d8b4fe"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.66" r="0.5">
-      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.45"/>
-      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
-  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#glow)"/>
-  <g transform="translate(64 107) scale(28)">
-    <path d="M16 4c1.2 6 7 7.5 7 14.5a7 7 0 0 1-14 0c0-3.6 2.4-5 3.6-7.4 1 2.4 2.2 2.6 3.4 2.6 0-3.6-1.2-6 0-9.7z" fill="url(#flame)"/>
-    <path d="M16 15.2c.55 2.5 2.9 3.2 2.9 6a2.9 2.9 0 0 1-5.8 0c0-1.5 1-2.1 1.5-3.1.4 1 .9 1.1 1.4 1.1 0-1.5-.5-2.5 0-4z" fill="url(#core)"/>
+  <!-- A phlox flower: five notched petals around a darker eye. -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="#17161a"/>
+  <g transform="translate(512 520)">
+    <g fill="#a48bf5">
+      <path id="petal" d="M0 -40 C-120 -90 -150 -250 -62 -306 C-36 -322 -12 -310 0 -284 C12 -310 36 -322 62 -306 C150 -250 120 -90 0 -40z"/>
+      <use href="#petal" transform="rotate(72)"/>
+      <use href="#petal" transform="rotate(144)"/>
+      <use href="#petal" transform="rotate(216)"/>
+      <use href="#petal" transform="rotate(288)"/>
+    </g>
+    <g stroke="#7458d6" stroke-width="14" stroke-linecap="round">
+      <path id="vein" d="M0 -70 L0 -170"/>
+      <use href="#vein" transform="rotate(72)"/>
+      <use href="#vein" transform="rotate(144)"/>
+      <use href="#vein" transform="rotate(216)"/>
+      <use href="#vein" transform="rotate(288)"/>
+    </g>
+    <circle r="62" fill="#5a3fbd"/>
+    <circle r="24" fill="#f3efff"/>
   </g>
 </svg>

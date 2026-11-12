@@ -1,9 +1,9 @@
-// Renders public/logo.svg into mac/Ember.icns. Run from the ember folder: swift mac/icon.swift
+// Renders public/logo.svg into mac/Phlox.icns. Run from the ember folder: swift mac/icon.swift
 import Cocoa
 
 let fm = FileManager.default
 guard let logo = NSImage(contentsOf: URL(fileURLWithPath: "public/logo.svg")) else { fatalError("cannot read public/logo.svg") }
-let set = URL(fileURLWithPath: "build/Ember.iconset")
+let set = URL(fileURLWithPath: "build/Phlox.iconset")
 try? fm.removeItem(at: set)
 try fm.createDirectory(at: set, withIntermediateDirectories: true)
 
@@ -24,7 +24,7 @@ for base in [16, 32, 128, 256, 512] {
 }
 let p = Process()
 p.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-p.arguments = ["-c", "icns", set.path, "-o", "mac/Ember.icns"]
+p.arguments = ["-c", "icns", set.path, "-o", "mac/Phlox.icns"]
 try p.run()
 p.waitUntilExit()
-print(p.terminationStatus == 0 ? "Wrote mac/Ember.icns" : "iconutil failed")
+print(p.terminationStatus == 0 ? "Wrote mac/Phlox.icns" : "iconutil failed")

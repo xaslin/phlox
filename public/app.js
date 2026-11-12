@@ -1,4 +1,4 @@
-// Ember front end. No framework: hash routes, fetch, and a small Markdown renderer.
+// Phlox front end. No framework: hash routes, fetch, and a small Markdown renderer.
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const main = $("#main");
@@ -6,6 +6,7 @@ let notes = [];
 let byTitle = {};
 let byPath = {};
 let dirty = false; // an edit that has not been saved
+let lastVersion = 0; // the folder version this page last loaded
 let editNext = null; // a note to open straight into the editor
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -50,7 +51,7 @@ function wikilink(t, a) {
   const name = unesc(t).split("#")[0].trim();
   const n = byTitle[name.toLowerCase()];
   const shown = a || t;
-  return n ? `<a class="wl" href="${href(n.path)}">${shown}</a>` : `<span class="wl missing" title="No note with this name yet">${shown}</span>`;
+  return n ? `<a class="wl" href="${href(n.path)}">${shown}</a>` : `<a class="wl missing" href="#" data-create="${esc(name)}" title="Not written yet. Click to create it.">${shown}</a>`;
 }
 function inline(s) {
   // Finished pieces are set aside so later rules cannot change them (a URL with underscores, code with stars).
@@ -144,6 +145,7 @@ async function loadNotes() {
   notes = data.notes;
   byTitle = Object.fromEntries(notes.map((n) => [n.title.toLowerCase(), n]));
   byPath = Object.fromEntries(notes.map((n) => [n.path, n]));
+  lastVersion = data.version;
   const links = notes.reduce((a, n) => a + n.out, 0);
   $("#vaultstat").textContent = `${notes.length} notes · ${links} links`;
   drawTree();
@@ -152,9 +154,10 @@ async function loadNotes() {
 // How many suggestions and conflicts are waiting, shown beside their screens.
 async function refreshBadges() {
   try {
-    const [c, t] = await Promise.all([api("/api/connect"), api("/api/tensions")]);
+    const [c, t, k] = await Promise.all([api("/api/connect"), api("/api/tensions"), api("/api/tasks")]);
     $("#b-connect").textContent = c.pairs.length || "";
     $("#b-tensions").textContent = t.tensions.length || "";
+    $("#b-tasks").textContent = k.open || "";
   } catch {}
 }
 function drawTree() {
@@ -171,7 +174,7 @@ function drawTree() {
   const walk = (node, prefix) =>
     Object.keys(node.kids).sort().map((k) => {
       const id = prefix + k;
-      return `<details data-id="${esc(id)}"${open.has(id) ? " open" : ""}><summary>${esc(k.replace(/^\d+\s+/, ""))}<small>${node.kids[k].count}</small></summary><div class="kids">${walk(node.kids[k], id + "/")}</div></details>`;
+      return `<details data-id="${esc(id)}"${open.has(id) ? " open" : ""}><summary>${esc(k.replace(/^\d+\s+/, ""))}</summary><div class="kids">${walk(node.kids[k], id + "/")}</div></details>`;
     }).join("") + node.files.map((n) => `<a href="${href(n.path)}" data-path="${esc(n.path)}" title="${esc(n.title)}">${esc(n.title)}</a>`).join("");
   $("#tree").innerHTML = walk(root, "");
   $$("#tree details").forEach((d) =>
@@ -195,36 +198,75 @@ function markActive() {
 
 // ───────────── views ─────────────
 // Every view takes `live`, which turns false once you have moved on, so a slow screen never draws over a newer one.
-const page = (html, cls = "") => (main.innerHTML = `<div class="wrap ${cls}">${html}</div>`);
-const chips = (n) => (n.tags || []).map((t) => `<a class="chip" href="${tagHref(t)}">${esc(t)}</a>`).join("");
+function page(html, { cls = "", title = "", actions = "", stat = "" } = {}) {
+  $("#bar-title").innerHTML = title;
+  $("#bar-actions").innerHTML = actions;
+  $("#viewstat").textContent = stat;
+  main.innerHTML = `<div class="wrap ${cls}">${html}</div>`;
+}
+const tags = (n) => (n.tags || []).map((t) => `<a class="tag" href="${tagHref(t)}">${esc(t)}</a>`).join("");
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 const keyNotice = `<div class="notice">This needs your own Anthropic API key. Add one in <a href="#/settings">Settings</a>. Everything else works without it.</div>`;
-const noteRows = (list) => `<div class="rows">${list.map((n) => `<a href="${href(n.path)}"><span>${esc(n.title)}</span><small>${esc(folderName(n.folder))} · ${n.words} words</small></a>`).join("")}</div>`;
+const noteRows = (list) => `<div class="rows">${list.map((n) => `<a href="${href(n.path)}"><span>${esc(n.title)}</span><small>${esc(folderName(n.folder))}</small></a>`).join("")}</div>`;
+
+// Reading aloud uses the voice built into the Mac. Nothing is sent anywhere.
+const canSpeak = "speechSynthesis" in window;
+const speakBtn = canSpeak ? `<button class="icon" id="speak" title="Read aloud" aria-label="Read aloud"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>` : "";
+function wireSpeak(getText) {
+  const btn = $("#speak");
+  if (!btn) return;
+  btn.onclick = () => {
+    if (speechSynthesis.speaking) {
+      speechSynthesis.cancel();
+      return btn.classList.remove("on");
+    }
+    const u = new SpeechSynthesisUtterance(getText().slice(0, 8000));
+    u.onend = u.onerror = () => btn.classList.remove("on");
+    btn.classList.add("on");
+    speechSynthesis.speak(u);
+  };
+}
 
 async function viewToday(live) {
-  const d = await api("/api/today");
+  const [d, c, t] = await Promise.all([api("/api/today"), api("/api/connect"), api("/api/tensions")]);
   if (!live()) return;
+  const b = d.briefing;
   const nice = new Date(d.date + "T12:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  // The briefing is one plain sentence per thing that is waiting, each linking to where you deal with it.
+  const lines = [
+    b.changedCount ? `${plural(b.changedCount, "note")} changed in the last day.` : "Nothing has changed since yesterday.",
+    b.openTasks ? `<a href="#/tasks">${plural(b.openTasks, "open task")}</a>.` : "",
+    c.pairs.length ? `<a href="#/connect">${plural(c.pairs.length, "pair")} of notes</a> could be linked.` : "",
+    t.tensions.length ? `<a href="#/tensions">${plural(t.tensions.length, "place")}</a> where your notes disagree.` : "",
+    b.streak > 1 ? `Day ${b.streak} in a row.` : "",
+  ].filter(Boolean);
   page(`
-    <div class="eyebrow">${esc(nice)}</div>
-    <h1 class="page">Three notes worth another look</h1>
-    <p class="lede">Picked for today from notes you have not opened in a while. Older and better-connected notes come up more often.</p>
+    <h1 class="page">${esc(nice)}</h1>
+    <p class="lede" id="brief">${lines.join(" ")}</p>
     <form class="capture" id="capture"><input name="text" placeholder="Capture a thought. It goes to your Inbox." autocomplete="off" aria-label="Capture a thought"><button class="btn primary">Capture</button></form>
-    <div class="picks">${d.picks.map((p, i) => `
-      <article class="card">
-        <span class="num">${i + 1}</span>
-        <h2>${link(p)}</h2>
-        <div class="why">${esc(p.why)}</div>
+    <h2 class="sec">Worth another look <small>not opened in a while</small></h2>
+    ${d.picks.map((p) => `
+      <article class="entry">
+        <h3>${link(p)}</h3>
+        <div class="sub">${esc(p.why)}</div>
         <p>${esc(p.excerpt)}</p>
-        <div class="row">${chips(p)}${p.source ? `<span class="chip plain">from ${esc(p.source.replace(/^https?:\/\/(www\.)?/, "").split("/")[0])}</span>` : ""}</div>
-      </article>`).join("") || `<div class="empty">No notes yet. Point Ember at a folder in Settings.</div>`}</div>
-    <div class="stats">
-      <div class="stat"><b>${d.stats.notes}</b><span>notes</span></div>
-      <div class="stat"><b>${d.stats.links}</b><span>links</span></div>
-      <div class="stat"><b>${d.stats.words.toLocaleString()}</b><span>words</span></div>
-      <div class="stat"><b>${d.stats.unopened}</b><span>never opened here</span></div>
-    </div>
-    ${d.stats.orphans.length ? `<h3 class="section">Nothing links to these</h3><div class="linklist">${d.stats.orphans.slice(0, 14).map((o) => link(o)).join("")}</div>` : ""}
-  `);
+        <div class="row">${tags(p)}${p.source ? `<span class="tag plain">from ${esc(p.source.replace(/^https?:\/\/(www\.)?/, "").split("/")[0])}</span>` : ""}</div>
+      </article>`).join("") || `<div class="empty">No notes yet. Point Phlox at a folder in Settings.</div>`}
+    ${b.changed.length ? `<h2 class="sec">Changed in the last day</h2>${noteRows(b.changed)}` : ""}
+    ${b.missing.length ? `<h2 class="sec">Linked but not written yet</h2><div class="rows">${b.missing.map((m) => `<a href="#" data-create="${esc(m.title)}"><span>${esc(m.title)}</span><small>mentioned in ${m.from.map(esc).join(", ")}</small></a>`).join("")}</div>` : ""}
+    ${d.stats.orphans.length ? `<h2 class="sec">Nothing links to these</h2>${noteRows(d.stats.orphans.slice(0, 10))}` : ""}
+  `, {
+    title: "<b>Today</b>",
+    actions: `${speakBtn}<button class="btn" id="daily">Today's note</button>`,
+    stat: `${d.stats.words.toLocaleString()} words · ${d.stats.unopened} never opened here`,
+  });
+  wireSpeak(() => `${nice}. ${$("#brief").textContent} Worth another look: ${d.picks.map((p) => p.title).join(", ")}.`);
+  $("#daily").onclick = guard(async () => {
+    const { path } = await api("/api/daily", { body: {} });
+    await loadNotes();
+    location.hash = href(path);
+  });
+  wireCreate();
   $("#capture").addEventListener("submit", guard(async (e) => {
     e.preventDefault();
     const input = e.target.text;
@@ -235,20 +277,50 @@ async function viewToday(live) {
     await loadNotes();
   }));
 }
+// A link to a note that does not exist yet creates it when clicked.
+function wireCreate() {
+  $$("[data-create]", main).forEach((a) => (a.onclick = guard(async (e) => {
+    e.preventDefault();
+    await createNote(a.dataset.create);
+  })));
+}
+
+async function viewTasks(live) {
+  const d = await api("/api/tasks");
+  if (!live()) return;
+  page(`
+    <h1 class="page">Tasks</h1>
+    <p class="lede">Every unticked checkbox in your notes, most recently edited note first. Write <code>- [ ] something</code> in any note to add one.</p>
+    ${d.groups.map((g) => `
+      <h2 class="sec">${link(g)} <small>${esc(folderName(g.folder))}</small></h2>
+      <div class="tasks">${g.tasks.map((t) => `<label><input type="checkbox" data-path="${esc(g.path)}" data-line="${t.line}"><span>${esc(t.text)}</span></label>`).join("")}</div>`).join("") || `<div class="empty">Nothing is waiting.</div>`}
+  `, { title: "<b>Tasks</b>", stat: `${d.open} open · ${d.done} done` });
+  $$(".tasks input", main).forEach((box) => (box.onchange = async () => {
+    try {
+      await api("/api/task", { body: { path: box.dataset.path, line: +box.dataset.line, done: box.checked } });
+      box.nextElementSibling.classList.toggle("gone", box.checked);
+      await loadNotes();
+    } catch (err) {
+      box.checked = !box.checked;
+      toast(err.message);
+    }
+  }));
+}
 
 async function viewNote(live, path) {
   let n;
   try {
     n = await api("/api/note?path=" + encodeURIComponent(path));
   } catch (err) {
-    if (live()) page(`<h1 class="page">Note not found</h1><p class="lede">${esc(err.message)} It may have been renamed or deleted. Press ⌘K to look for it.</p>`);
+    if (live()) page(`<h1 class="page">Note not found</h1><p class="lede">${esc(err.message)}. It may have been renamed or deleted. Press ⌘K to look for it.</p>`, { title: "<b>Not found</b>" });
     return;
   }
   if (!live()) return;
   const recent = [n.path, ...JSON.parse(localStorage.getItem("ember-recent") || "[]").filter((p) => p !== n.path)].slice(0, 6);
   localStorage.setItem("ember-recent", JSON.stringify(recent));
-  const crumbs = `${n.folder ? esc(folderName(n.folder)).replace(/ \/ /g, " <i>/</i> ") + " <i>/</i> " : ""}<b>${esc(n.title)}</b>`;
+  const crumbs = `${n.folder ? esc(folderName(n.folder)) + " / " : ""}<b>${esc(n.title)}</b>`;
   const src = n.source && /^https?:/.test(n.source) ? `<a href="${esc(n.source)}" target="_blank" rel="noopener noreferrer">original</a>` : esc(n.source);
+  const list = (items, each, none) => (items.length ? `<ul>${items.map((x) => `<li>${each(x)}</li>`).join("")}</ul>` : `<p class="none">${none}</p>`);
 
   const show = () => {
     dirty = false;
@@ -256,19 +328,27 @@ async function viewNote(live, path) {
     const body = render(n.body, { heads, line0: n.raw.split("\n").length - n.body.split("\n").length });
     const toc = heads.filter((h) => h.lvl === 2 || h.lvl === 3);
     page(`
-      <div class="crumbs">${crumbs}<span class="grow"></span><button class="btn" id="edit" title="Edit (⌘E)">Edit</button></div>
       <div class="note-layout">
         <article>
-          <div class="meta">${chips(n)}<span>${n.words} words</span><span>${esc(n.created)}</span>${src ? `<span>${src}</span>` : ""}</div>
+          <div class="meta">${tags(n)}<span>${esc(n.created)}</span>${src ? `<span>${src}</span>` : ""}</div>
           <div class="md">${body}</div>
         </article>
         <aside class="rail">
-          ${toc.length > 1 ? `<div><h3 class="section">On this page</h3><div class="toc">${toc.map((h) => `<a href="#" class="l${h.lvl}" data-head="${h.id}">${esc(h.text)}</a>`).join("")}</div></div>` : ""}
-          <div><h3 class="section">Linked from${n.backlinks.length ? ` · ${n.backlinks.length}` : ""}</h3>${n.backlinks.length ? `<ul>${n.backlinks.map((b) => `<li>${link(b)}<small>${esc(b.context)}</small></li>`).join("")}</ul>` : `<p class="none">Nothing links here yet.</p>`}</div>
-          <div><h3 class="section">Reads like</h3>${n.related.length ? `<ul>${n.related.map((r) => `<li>${link(r)}${r.linked ? "" : ` <button class="ghost" data-link="${esc(r.path)}" title="Add a link to this note">+ link</button>`}<small>${Math.round(r.score * 100)}% alike${r.linked ? " · linked" : ""}</small></li>`).join("")}</ul>` : `<p class="none">Nothing similar found.</p>`}</div>
+          ${toc.length > 1 ? `<div><h4>On this page</h4><div class="toc">${toc.map((h) => `<a href="#" class="l${h.lvl}" data-head="${h.id}">${esc(h.text)}</a>`).join("")}</div></div>` : ""}
+          <div><h4>Linked from</h4>${list(n.backlinks, (b) => `${link(b)}<small>${esc(b.context)}</small>`, "Nothing links here yet.")}</div>
+          ${n.mentions.length ? `<div><h4>Mentioned without a link</h4>${list(n.mentions, (m) => `${link(m)} <button class="link-btn" data-mention="${esc(m.path)}">link it</button><small>${esc(m.context)}</small>`)}</div>` : ""}
+          ${n.hops.length ? `<div><h4>Two links away</h4>${list(n.hops, (h) => `${link(h)}<small>through ${h.via.map(esc).join(", ")}</small>`)}</div>` : ""}
+          <div><h4>Reads like</h4>${list(n.related, (r) => `${link(r)}${r.linked ? "" : ` <button class="link-btn" data-link="${esc(r.path)}">link</button>`}<small>${Math.round(r.score * 100)}% alike${r.linked ? ", linked" : ""}</small>`, "Nothing similar found.")}</div>
         </aside>
-      </div>`, "note");
+      </div>`, {
+      cls: "note",
+      title: crumbs,
+      actions: `${speakBtn}<button class="btn" id="edit" title="Edit (⌘E)">Edit</button>`,
+      stat: `${plural(n.backlinks.length, "backlink")} · ${plural(n.words, "word")} · ${plural(n.chars, "character")}`,
+    });
     $("#edit").onclick = edit;
+    wireSpeak(() => $(".md", main).innerText);
+    wireCreate();
     $$("[data-head]", main).forEach((a) => (a.onclick = (e) => {
       e.preventDefault();
       document.getElementById(a.dataset.head)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -279,16 +359,20 @@ async function viewNote(live, path) {
       await loadNotes();
       route();
     })));
-    // Ticking a checkbox rewrites that one line of the file.
+    $$("[data-mention]", main).forEach((b) => (b.onclick = guard(async () => {
+      await api("/api/mention", { body: { from: b.dataset.mention, to: n.path } });
+      toast("Linked");
+      await loadNotes();
+      route();
+    })));
     $$("input[data-line]", main).forEach((box) => (box.onchange = async () => {
-      const lines = n.raw.split("\n"), at = +box.dataset.line;
-      const next = (lines[at] || "").replace(/^(\s*(?:[-*+]|\d+\.)\s+)\[( |x|X)\]/, (_, pre) => `${pre}[${box.checked ? "x" : " "}]`);
       try {
-        if (next === lines[at]) throw new Error("That line changed on disk. Reopen the note.");
-        lines[at] = next;
-        await api("/api/note", { method: "PUT", body: { path: n.path, raw: lines.join("\n") } });
-        n.raw = lines.join("\n");
+        await api("/api/task", { body: { path: n.path, line: +box.dataset.line, done: box.checked } });
         box.closest("li").classList.toggle("done", box.checked);
+        const lines = n.raw.split("\n");
+        lines[+box.dataset.line] = lines[+box.dataset.line].replace(/\[( |x|X)\]/, box.checked ? "[x]" : "[ ]");
+        n.raw = lines.join("\n");
+        await loadNotes();
       } catch (err) {
         box.checked = !box.checked;
         toast(err.message);
@@ -298,19 +382,58 @@ async function viewNote(live, path) {
 
   const edit = () => {
     page(`
-      <div class="crumbs">${crumbs}<span class="grow"></span><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">Save</button></div>
-      <div class="meta"><span>Plain Markdown. Link to another note with [[Its Title]]. ⌘S saves.</span></div>
-      <div class="edit-split"><textarea class="editor" id="raw" spellcheck="true" aria-label="Note text"></textarea><div class="md preview" id="preview" aria-label="Preview"></div></div>`, "note");
-    const ta = $("#raw"), pv = $("#preview");
+      <div class="meta"><span>Plain Markdown. Type [[ to link to another note. ⌘S saves.</span></div>
+      <div class="edit-split"><textarea class="editor" id="raw" spellcheck="true" aria-label="Note text"></textarea><div class="md preview" id="preview" aria-label="Preview"></div><div class="suggest" id="suggest" hidden></div></div>`, {
+      cls: "note",
+      title: crumbs,
+      actions: `<button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">Save</button>`,
+      stat: "Editing",
+    });
+    const ta = $("#raw"), pv = $("#preview"), sug = $("#suggest");
     ta.value = n.raw;
     const preview = () => (pv.innerHTML = render(ta.value.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, "")));
     preview();
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
+
+    // Typing [[ offers matching note titles.
+    let items = [], at = 0, from = -1;
+    const close = () => {
+      sug.hidden = true;
+      items = [];
+    };
+    const suggest = () => {
+      const upto = ta.value.slice(0, ta.selectionStart), open = upto.lastIndexOf("[[");
+      const q = open >= 0 ? upto.slice(open + 2) : null;
+      if (q === null || /[\]\n|]/.test(q) || q.length > 60) return close();
+      const ql = q.toLowerCase();
+      items = notes.map((x) => ({ x, s: ql ? fuzzy(ql, x.title.toLowerCase()) : 0 })).filter((y) => y.s !== null && y.x.path !== n.path)
+        .sort((a, b) => b.s - a.s || a.x.title.localeCompare(b.x.title)).slice(0, 6).map((y) => y.x);
+      if (!items.length) return close();
+      from = open + 2;
+      at = Math.min(at, items.length - 1);
+      sug.hidden = false;
+      sug.innerHTML = `<small>Link to a note</small>` + items.map((x, i) => `<div class="${i === at ? "on" : ""}" data-i="${i}">${esc(x.title)}</div>`).join("");
+    };
+    const accept = (i) => {
+      const end = ta.selectionStart;
+      ta.setRangeText(items[i].title + (ta.value.slice(end).startsWith("]]") ? "" : "]]"), from, end, "end");
+      close();
+      ta.focus();
+      ta.dispatchEvent(new Event("input"));
+    };
+    sug.onmousedown = (e) => {
+      e.preventDefault();
+      const el = e.target.closest("[data-i]");
+      if (el) accept(+el.dataset.i);
+    };
     ta.addEventListener("input", () => {
       dirty = ta.value !== n.raw;
       preview();
+      at = 0;
+      suggest();
     });
+    ta.addEventListener("blur", close);
     const save = guard(async () => {
       await api("/api/note", { method: "PUT", body: { path: n.path, raw: ta.value } });
       dirty = false;
@@ -324,6 +447,15 @@ async function viewNote(live, path) {
       show();
     };
     ta.addEventListener("keydown", (e) => {
+      if (items.length && !e.isComposing) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          at = (at + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          return suggest();
+        }
+        if (e.key === "Enter" || e.key === "Tab") return e.preventDefault(), accept(at);
+        if (e.key === "Escape") return e.preventDefault(), close();
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         save();
@@ -344,24 +476,23 @@ async function viewConnect(live) {
   const { pairs } = await api("/api/connect");
   if (!live()) return;
   page(`
-    <div class="eyebrow">${pairs.length} suggestion${pairs.length === 1 ? "" : "s"}</div>
     <h1 class="page">Notes that should know about each other</h1>
     <p class="lede">These pairs use the same rare words but do not link to each other. Linking adds a "See also" line to the first note.</p>
     ${pairs.map((p) => `
-      <div class="card" data-id="${esc(p.id)}">
+      <div class="entry" data-id="${esc(p.id)}">
         <div class="pair">
-          <div>${link(p.a, "t")}<small>${esc(folderName(p.a.folder))}</small></div>
+          <div>${link(p.a)}<div class="sub">${esc(folderName(p.a.folder))}</div></div>
           <div class="mid">${Math.round(p.score * 100)}% alike</div>
-          <div>${link(p.b, "t")}<small>${esc(folderName(p.b.folder))}</small></div>
+          <div>${link(p.b)}<div class="sub">${esc(folderName(p.b.folder))}</div></div>
         </div>
-        <div class="row"><span class="why" style="margin:0">Both mention: ${p.shared.map(esc).join(", ")}</span><span class="grow"></span>
-          <button class="btn" data-dismiss>Not related</button><button class="btn primary" data-from="${esc(p.a.path)}" data-to="${esc(p.b.path)}">Link them</button></div>
+        <div class="row"><span class="sub">Both mention ${p.shared.map(esc).join(", ")}</span><span class="grow"></span>
+          <button class="btn" data-dismiss>Not related</button><button class="btn" data-from="${esc(p.a.path)}" data-to="${esc(p.b.path)}">Link them</button></div>
       </div>`).join("") || `<div class="empty">Every similar pair is already linked.</div>`}
-  `);
+  `, { title: "<b>Connect</b>", stat: plural(pairs.length, "suggestion") });
   $$("[data-from]", main).forEach((b) => (b.onclick = guard(async () => {
     b.disabled = true;
     await api("/api/link", { body: { from: b.dataset.from, to: b.dataset.to } }).finally(() => (b.disabled = false));
-    b.closest(".card").remove();
+    b.closest(".entry").remove();
     toast("Linked");
     await loadNotes();
   })));
@@ -369,9 +500,9 @@ async function viewConnect(live) {
 }
 function wireDismiss() {
   $$("[data-dismiss]", main).forEach((b) => (b.onclick = guard(async () => {
-    const card = b.closest(".card");
-    await api("/api/dismiss", { body: { id: card.dataset.id } });
-    card.remove();
+    const entry = b.closest(".entry");
+    await api("/api/dismiss", { body: { id: entry.dataset.id } });
+    entry.remove();
     refreshBadges();
   })));
 }
@@ -379,30 +510,30 @@ function wireDismiss() {
 async function viewTensions(live) {
   const d = await api("/api/tensions");
   if (!live()) return;
-  const side = (x, big) => `<div>${big !== undefined ? `<big>${esc(big)}</big>` : ""}<q>${esc(x.sentence)}</q>${link(x)}${x.section && x.section !== x.title ? `<small class="why"> · ${esc(x.section)}</small>` : ""}</div>`;
+  const side = (x, big) => `<div>${big !== undefined ? `<big>${esc(big)}</big>` : ""}<q>${esc(x.sentence)}</q><span class="sub">${link(x)}${x.section && x.section !== x.title ? `, under ${esc(x.section)}` : ""}</span></div>`;
   page(`
-    <div class="eyebrow">${d.tensions.length} found on this Mac</div>
     <h1 class="page">Where your notes disagree</h1>
-    <p class="lede">Two passages that give different numbers for what looks like the same thing. A deeper read, for disagreements that are not about numbers, uses Claude.</p>
+    <p class="lede">Two passages that give different numbers for what looks like the same thing. These are found on this Mac.</p>
     ${d.tensions.map((t) => `
-      <div class="card" data-id="${esc(t.id)}">
+      <div class="entry" data-id="${esc(t.id)}">
         <div class="versus">${side(t.a, `${t.a.value.toLocaleString()} ${t.a.shown}`)}${side(t.b, `${t.b.value.toLocaleString()} ${t.b.shown}`)}</div>
         <div class="row"><span class="grow"></span><button class="btn" data-dismiss>Not a conflict</button></div>
       </div>`).join("") || `<div class="empty">No conflicting numbers found.</div>`}
-    <h3 class="section">Deeper read</h3>
+    <h2 class="sec">Deeper read <small>uses Claude</small></h2>
+    <p class="lede" style="margin-top:12px">For disagreements that are not about numbers. Sends your notes, except hubs and session logs, to Claude once.</p>
     ${d.hasKey ? "" : keyNotice}
-    <div class="row" style="margin:0 0 16px"><button class="btn primary" id="deep"${d.hasKey ? "" : " disabled"}>Read the whole vault for disagreements</button><span class="why" style="margin:0">Sends your notes, except hubs and session logs, to Claude once.</span></div>
-    <div id="deepout"></div>
-  `);
+    <button class="btn" id="deep"${d.hasKey ? "" : " disabled"}>Read the whole vault for disagreements</button>
+    <div id="deepout" style="margin-top:14px"></div>
+  `, { title: "<b>Tensions</b>", stat: `${d.tensions.length} found` });
   wireDismiss();
   $("#deep").onclick = async (e) => {
     const btn = e.currentTarget, out = $("#deepout");
     btn.disabled = true;
-    out.innerHTML = `<p class="why"><span class="spinner"></span>Reading. This can take a minute.</p>`;
+    out.innerHTML = `<p class="sub"><span class="spinner"></span>Reading. This can take a minute.</p>`;
     try {
       const { findings } = await api("/api/tensions/deep", { body: {} });
       out.innerHTML = findings.map((f) => `
-        <div class="card"><div class="kind">${esc(f.kind)}</div><p style="margin:6px 0 12px">${esc(f.explanation)}</p><div class="versus">${side(f.a)}${side(f.b)}</div></div>`).join("") || `<div class="empty">Claude found nothing that disagrees.</div>`;
+        <div class="entry"><div class="kind">${esc(f.kind)}</div><p style="margin:2px 0 10px">${esc(f.explanation)}</p><div class="versus">${side(f.a)}${side(f.b)}</div></div>`).join("") || `<div class="empty">Claude found nothing that disagrees.</div>`;
     } catch (err) {
       out.innerHTML = `<div class="notice">${esc(err.message)}</div>`;
     }
@@ -415,26 +546,27 @@ async function viewSearch(live, q) {
   if (!live()) return;
   const words = q.split(/\s+/).filter((w) => w.length > 1).map((w) => esc(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const mark = (s) => (words.length ? esc(s).replace(new RegExp(`(${words.join("|")})`, "gi"), "<mark>$1</mark>") : esc(s));
-  page(`<div class="eyebrow">Search</div><h1 class="page">${hits.length} result${hits.length === 1 ? "" : "s"} for “${esc(q)}”</h1><p class="lede">Best matches first. Press ⌘K to search again.</p>
-    <div class="hits">${hits.map((h) => `<div class="card"><h2>${link(h)}</h2><div class="why">${esc(folderName(h.folder))}</div><p>${mark(h.snippet)}</p></div>`).join("") || `<div class="empty">Nothing matches. Try fewer words.</div>`}</div>`);
+  page(`<h1 class="page">“${esc(q)}”</h1><p class="lede">${plural(hits.length, "note")}, best match first.</p>
+    ${hits.map((h) => `<div class="entry"><h3>${link(h)}</h3><div class="sub">${esc(folderName(h.folder))}</div><p>${mark(h.snippet)}</p></div>`).join("") || `<div class="empty">Nothing matches. Try fewer words.</div>`}`,
+    { title: "<b>Search</b>", stat: plural(hits.length, "result") });
 }
 
 function viewTag(live, tag) {
   const list = notes.filter((n) => (n.tags || []).includes(tag));
-  page(`<div class="eyebrow">Tag</div><h1 class="page">${esc(tag)}</h1><p class="lede">${list.length} note${list.length === 1 ? "" : "s"} carry this tag.</p>
-    ${list.length ? noteRows(list) : `<div class="empty">No notes have this tag.</div>`}`);
+  page(`<h1 class="page">#${esc(tag)}</h1><p class="lede">${plural(list.length, "note")}.</p>
+    ${list.length ? noteRows(list) : `<div class="empty">No notes have this tag.</div>`}`, { title: `Tags / <b>${esc(tag)}</b>` });
 }
 
 async function viewAsk(live) {
   const s = await api("/api/settings");
   if (!live()) return;
   page(`
-    <div class="eyebrow">Uses Claude</div>
     <h1 class="page">Ask your notes</h1>
-    <p class="lede">Ember finds the notes that match, sends those notes and your question to Claude, and shows an answer that cites them.</p>
+    <p class="lede">Phlox finds the notes that match, sends those notes and your question to Claude, and shows an answer that cites them.</p>
     ${s.hasKey ? "" : keyNotice}
-    <form class="askbox" id="ask"><textarea name="q" placeholder="What did I decide about the NHD thesis, and what is still unwritten?" aria-label="Your question"></textarea><button class="btn primary"${s.hasKey ? "" : " disabled"}>Ask</button></form>
-    <div id="answer"></div>`);
+    <form class="askbox" id="ask"><textarea class="field" name="q" placeholder="What did I decide about the NHD thesis, and what is still unwritten?" aria-label="Your question"></textarea><button class="btn primary"${s.hasKey ? "" : " disabled"}>Ask</button></form>
+    <div id="answer"></div>`, { title: "<b>Ask</b>", actions: speakBtn });
+  wireSpeak(() => $("#answer").innerText);
   const form = $("#ask");
   let busy = false;
   form.q.addEventListener("keydown", (e) => {
@@ -449,7 +581,7 @@ async function viewAsk(live) {
     if (!question || !s.hasKey || busy) return;
     busy = true;
     const out = $("#answer");
-    out.innerHTML = `<p class="why"><span class="spinner"></span>Finding notes and thinking.</p>`;
+    out.innerHTML = `<p class="sub"><span class="spinner"></span>Finding notes and thinking.</p>`;
     try {
       const res = await fetch("/api/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Request failed");
@@ -462,9 +594,9 @@ async function viewAsk(live) {
         if (done) break;
         text += dec.decode(value, { stream: true });
         if (!out.isConnected) return reader.cancel();
-        out.innerHTML = `<div class="card md">${render(text)}</div>`;
+        out.innerHTML = `<div class="answer md">${render(text)}</div>`;
       }
-      out.innerHTML = `<div class="card md">${render(text || "*No answer came back.*")}</div><h3 class="section">Notes Claude was given</h3><div class="linklist">${sources.map((n) => link(n)).join("")}</div>`;
+      out.innerHTML = `<div class="answer md">${render(text || "*No answer came back.*")}</div><h2 class="sec">Notes Claude was given</h2>${noteRows(sources)}`;
     } catch (err) {
       out.innerHTML = `<div class="notice">${esc(err.message)}</div>`;
     } finally {
@@ -477,16 +609,15 @@ async function viewDigest(live) {
   const s = await api("/api/settings");
   if (!live()) return;
   page(`
-    <div class="eyebrow">Uses Claude</div>
     <h1 class="page">Digest a source</h1>
     <p class="lede">Paste an article, a transcript or lecture notes. Claude writes a source note with a summary, plus one small note per idea, each linked back to the source and to notes you already have.</p>
     ${s.hasKey ? "" : keyNotice}
     <form class="digest" id="digest">
-      <input name="title" placeholder="Title (optional)" aria-label="Title">
-      <textarea name="text" placeholder="Paste the text here" aria-label="Source text"></textarea>
-      <input name="origin" placeholder="Where it came from: a link or a description (optional)" aria-label="Where it came from">
-      <div class="row"><button class="btn primary"${s.hasKey ? "" : " disabled"}>Digest</button><span class="why" id="dstate" style="margin:0"></span></div>
-    </form><div id="dout"></div>`);
+      <input class="field" name="title" placeholder="Title (optional)" aria-label="Title">
+      <textarea class="field" name="text" placeholder="Paste the text here" aria-label="Source text"></textarea>
+      <input class="field" name="origin" placeholder="Where it came from: a link or a description (optional)" aria-label="Where it came from">
+      <div class="row" style="margin-top:10px"><button class="btn primary"${s.hasKey ? "" : " disabled"}>Digest</button><span class="sub" id="dstate"></span></div>
+    </form><div id="dout"></div>`, { title: "<b>Digest</b>" });
   $("#digest").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target, btn = $("button", f), state = $("#dstate");
@@ -497,7 +628,7 @@ async function viewDigest(live) {
       const r = await api("/api/digest", { body: { title: f.title.value, text: f.text.value, origin: f.origin.value } });
       await loadNotes();
       state.textContent = "";
-      $("#dout").innerHTML = `<h3 class="section">Created</h3><div class="linklist">${[r.source, ...r.atoms].map((p) => (byPath[p] ? link(byPath[p]) : esc(p))).join("")}</div>`;
+      $("#dout").innerHTML = `<h2 class="sec">Created</h2>${noteRows([r.source, ...r.atoms].map((p) => byPath[p]).filter(Boolean))}`;
       f.reset();
     } catch (err) {
       state.textContent = err.message;
@@ -511,20 +642,22 @@ async function viewSettings(live) {
   if (!live()) return;
   page(`
     <h1 class="page">Settings</h1>
-    <p class="lede">Ember reads and writes plain Markdown files in one folder. Nothing is uploaded unless you use Ask, Digest or the deeper read under Tensions.</p>
+    <p class="lede">Phlox reads and writes plain Markdown files in one folder. Nothing is uploaded unless you use Ask, Digest or the deeper read under Tensions.</p>
     <form id="set">
-      <div class="field"><label for="vault">Notes folder</label><input id="vault" name="vault" value="${esc(s.vault)}" spellcheck="false">
-        <small>${s.exists ? `${notes.length} notes found. An Obsidian vault works as is.` : "This folder does not exist."}</small></div>
-      <div class="field"><label for="key">Anthropic API key</label><input id="key" name="apiKey" type="password" autocomplete="off" placeholder="${s.hasKey ? "A key is saved. Type a new one to replace it." : "sk-ant-…"}">
+      <div class="form-row"><label for="vault">Notes folder</label><input class="field" id="vault" name="vault" value="${esc(s.vault)}" spellcheck="false">
+        <small>${s.exists ? `${notes.length} notes found. An Obsidian vault works as is, and edits made there show up here within a few seconds.` : "This folder does not exist."}</small></div>
+      <div class="form-row"><label for="key">Anthropic API key</label><input class="field" id="key" name="apiKey" type="password" autocomplete="off" placeholder="${s.hasKey ? "A key is saved. Type a new one to replace it." : "sk-ant-…"}">
         <small>${s.hasKey ? `Using the key from ${esc(s.keyFrom)}. ` : ""}Stored in ~/.config/ember/config.json, readable only by you. Requests go to Anthropic with the model ${esc(s.model)} and are billed to this key.</small></div>
       <div class="row"><button class="btn primary">Save</button>${s.keyFrom === "settings" ? `<button class="btn" type="button" id="forget">Forget the key</button>` : ""}<button class="btn" type="button" id="reindex">Re-read the folder</button></div>
     </form>
-    <h3 class="section">Keys</h3>
+    <h2 class="sec">Keys</h2>
     <div class="rows">
-      <a><span>Search or jump to a note</span><small><kbd>⌘K</kbd></small></a>
-      <a><span>Edit the open note</span><small><kbd>⌘E</kbd></small></a>
-      <a><span>Save while editing</span><small><kbd>⌘S</kbd></small></a>
-    </div>`);
+      <div><span>Search, jump to a note, or create one</span><small><kbd>⌘K</kbd></small></div>
+      <div><span>Edit the open note</span><small><kbd>⌘E</kbd></small></div>
+      <div><span>Save while editing</span><small><kbd>⌘S</kbd></small></div>
+      <div><span>Link to a note while editing</span><small><kbd>[[</kbd></small></div>
+      <div><span>Trace how two notes connect, on the Sphere</span><small>click one, then <kbd>shift</kbd>-click another</small></div>
+    </div>`, { title: "<b>Settings</b>" });
   $("#set").addEventListener("submit", guard(async (e) => {
     e.preventDefault();
     const body = { vault: e.target.vault.value };
@@ -557,11 +690,8 @@ async function viewGraph(live) {
   const palette = ["#a78bfa", "#60a5fa", "#34d399", "#f472b6", "#fbbf24", "#22d3ee", "#fb7185", "#94a3b8", "#c084fc"];
   const color = Object.fromEntries(groups.map((k, i) => [k, palette[i % palette.length]]));
   page(`
-    <div class="eyebrow">${g.nodes.length} notes · ${g.edges.length} links</div>
-    <h1 class="page">Graph</h1>
-    <p class="lede">Every note and every link. Drag to move around, scroll to zoom, click a dot to open the note.</p>
     <div class="graphbox"><canvas id="graph"></canvas></div>
-    <div class="legend">${groups.map((k) => `<span><i style="background:${color[k]};color:${color[k]}"></i>${esc(k.replace(/^\d+\s+/, ""))}</span>`).join("")}</div>`, "wide");
+    <div class="legend">${groups.map((k) => `<span><i style="background:${color[k]};color:${color[k]}"></i>${esc(k.replace(/^\d+\s+/, ""))}</span>`).join("")}</div>`, { cls: "wide", title: "<b>Graph</b>", stat: "Drag to move · scroll to zoom · click a dot to open it" });
   const cv = $("#graph");
   const ctx = cv.getContext("2d");
   const css = getComputedStyle(document.documentElement);
@@ -626,7 +756,7 @@ async function viewGraph(live) {
       const lit = hover === null || i === hover || near.has(i);
       ctx.globalAlpha = lit ? 1 : 0.25;
       ctx.fillStyle = color[n.group];
-      ctx.shadowColor = color[n.group]; ctx.shadowBlur = lit && (hover !== null || n.degree >= 8) ? 12 : 0;
+      ctx.shadowColor = color[n.group]; ctx.shadowBlur = i === hover ? 10 : 0;
       ctx.beginPath(); ctx.arc(n.x, n.y, radius(n), 0, 6.3); ctx.fill();
       ctx.shadowBlur = 0;
       if (i === hover || (hover !== null && near.has(i)) || (hover === null && n.degree >= 14 && view.k > 0.45)) {
@@ -672,14 +802,12 @@ async function viewSphere(live) {
   const color = Object.fromEntries(groups.map((k, i) => [k, palette[i % palette.length]]));
   const label = (k) => k.replace(/^\d+\s+/, "");
   page(`
-    <h1 class="page">Sphere</h1>
-    <p class="lede">Your whole vault on one globe. Drag to spin it, scroll to zoom, click a point to read about the note, double-click to open it.</p>
     <div class="sphere">
       <canvas id="sphere"></canvas>
       <div class="hud hud-left" id="hudl"></div>
       <div class="hud hud-right" id="hudr"></div>
       <div class="hud hud-foot" id="hudf"></div>
-    </div>`, "wide");
+    </div>`, { cls: "wide", title: "<b>Sphere</b>", stat: "Drag to spin · scroll to zoom · click a point · shift-click a second one to trace the route · double-click to open" });
   const cv = $("#sphere"), ctx = cv.getContext("2d");
   const N = g.nodes.length, GA = Math.PI * (3 - Math.sqrt(5));
   const sorted = [...g.nodes].sort((a, b) => a.group.localeCompare(b.group) || a.title.localeCompare(b.title));
@@ -694,6 +822,7 @@ async function viewSphere(live) {
 
   let rotY = 0.6, rotX = 0.25, velY = 0.0022, velX = 0, zoom = 1, target = null;
   let hover = null, picked = null, onlyGroup = null, drag = null, alive = true, t = 0;
+  let trail = [], trailSet = new Set(); // a chain of links between two notes, when one is being traced
   const CAM = 3.2;
   let CX = 0, CY = 0; // where the globe sits; it moves up when the details panel is docked below
 
@@ -707,6 +836,7 @@ async function viewSphere(live) {
     return [CX + x * R * k, CY - y * R * k, z, k];
   }
   const lit = (i) => {
+    if (trail.length) return trail.includes(i);
     if (onlyGroup && nodes[i].group !== onlyGroup) return false;
     const focus = hover ?? picked;
     return focus === null || i === focus || near[focus].has(i);
@@ -724,9 +854,11 @@ async function viewSphere(live) {
       <h3>${esc(n.title)}</h3>
       <div class="hud-meta">${esc(n.created)} · ${n.words} words · ${n.inn} in · ${n.out} out</div>
       <p>${esc(n.excerpt)}</p>
+      ${trail.length ? `<div class="hud-title">Route · ${trail.length - 1} step${trail.length === 2 ? "" : "s"}</div><div class="hud-links">${trail.map((j) => `<button data-go="${j}"><i style="background:${color[nodes[j].group]}"></i>${esc(nodes[j].title)}</button>`).join("")}</div>` : ""}
       <div class="hud-title">Linked</div>
       <div class="hud-links">${[...near[picked]].slice(0, 9).map((j) => `<button data-go="${j}"><i style="background:${color[nodes[j].group]}"></i>${esc(nodes[j].title)}</button>`).join("") || "<span>Nothing yet</span>"}</div>
-      <a class="hud-open" href="${href(n.id)}">Open note →</a>` : `
+      <a class="hud-open" href="${href(n.id)}">Open note →</a>
+      <div class="hud-meta" style="margin-top:8px">Shift-click another point to trace how the two connect.</div>` : `
       <div class="hud-title">Vault</div>
       <div class="hud-big">${N}<small>notes</small></div>
       <div class="hud-big">${edges.length}<small>links</small></div>
@@ -735,11 +867,37 @@ async function viewSphere(live) {
   }
   function select(i) {
     picked = i;
+    trail = [];
+    trailSet = new Set();
     if (i !== null) {
       const [x, y, z] = nodes[i].p;
       target = { y: Math.atan2(-x, z), x: Math.atan2(y, Math.hypot(x, z)) };
       velY = 0; velX = 0;
     }
+    drawHud();
+  }
+
+  // Shortest chain of links from the picked note to another one.
+  function trace(to) {
+    // Index pages link to everything, so a route through one says nothing. Try without them first.
+    const search = (skipHubs) => {
+      const prev = new Map([[picked, null]]), queue = [picked];
+      while (queue.length && !prev.has(to)) {
+        const at = queue.shift();
+        for (const next of near[at]) {
+          if (prev.has(next) || (skipHubs && nodes[next].hub && next !== to)) continue;
+          prev.set(next, at);
+          queue.push(next);
+        }
+      }
+      return prev;
+    };
+    let prev = search(true);
+    if (!prev.has(to)) prev = search(false);
+    if (!prev.has(to)) return toast("No chain of links joins those two notes.");
+    trail = [];
+    for (let at = to; at !== null; at = prev.get(at)) trail.unshift(at);
+    trailSet = new Set(trail.slice(1).map((b, k) => trail[k] + "-" + b));
     drawHud();
   }
 
@@ -819,6 +977,7 @@ async function viewSphere(live) {
       ctx.globalAlpha = on ? alpha : 1;
       ctx.lineWidth = on ? 1.4 : 0.7;
       ctx.beginPath(); ctx.moveTo(a.s[0], a.s[1]); ctx.quadraticCurveTo(m[0], m[1], b.s[0], b.s[1]); ctx.stroke();
+      if (trailSet.size && (trailSet.has(i + "-" + j) || trailSet.has(j + "-" + i))) { ctx.strokeStyle = "#fff"; ctx.globalAlpha = 1; ctx.lineWidth = 2.2; ctx.stroke(); }
       if (on) { // a pulse travelling along the link
         const u = ((t * 0.012 + i * 0.37) % 1), v = 1 - u;
         ctx.fillStyle = "#fff"; ctx.beginPath();
@@ -841,7 +1000,7 @@ async function viewSphere(live) {
         ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.globalAlpha = 1;
         ctx.beginPath(); ctx.arc(x, y, r + 5 + Math.sin(t * 0.08) * 1.5, 0, 6.3); ctx.stroke();
       }
-      const show = i === focus || (focus !== null && near[focus].has(i) && z > -0.3) || (focus === null && on && z > 0.45 && n.degree >= 9);
+      const show = trail.includes(i) || i === focus || (focus !== null && near[focus].has(i) && z > -0.3) || (focus === null && on && z > 0.45 && n.degree >= 9);
       if (show) {
         ctx.globalAlpha = i === focus ? 1 : 0.85;
         ctx.font = `${i === focus ? 600 : 400} ${i === focus ? 13 : 11}px -apple-system, sans-serif`;
@@ -884,21 +1043,25 @@ async function viewSphere(live) {
   };
   const release = (e) => {
     const was = drag; drag = null; cv.style.cursor = "grab";
-    if (was && was.moved < 5 && e.type === "mouseup") select(pick(e));
+    if (was && was.moved < 5 && e.type === "mouseup") {
+      const hit = pick(e);
+      if (e.shiftKey && picked !== null && hit !== null && hit !== picked) trace(hit);
+      else select(hit);
+    }
   };
   cv.onmouseup = release;
   cv.onmouseleave = (e) => { release(e); hover = null; };
   cv.ondblclick = (e) => { const i = pick(e); if (i !== null) location.hash = href(nodes[i].id); };
   cv.onwheel = (e) => { e.preventDefault(); zoom = Math.max(0.6, Math.min(2.4, zoom * (e.deltaY < 0 ? 1.08 : 0.93))); };
   stopGraph = () => (alive = false);
-  window.__sphere = { nodes, select, state: () => ({ rotY, rotX, zoom, picked, hover, onlyGroup }) };
+  window.__sphere = { nodes, select, trace, trail: () => trail, state: () => ({ rotY, rotX, zoom, picked, hover, onlyGroup }) };
   drawHud();
   frame();
 }
 
 // ───────────── command palette ─────────────
 const pal = $("#palette"), pq = $("#pq"), pl = $("#pl");
-const SCREENS = [["today", "Today"], ["connect", "Connect"], ["tensions", "Tensions"], ["graph", "Graph"], ["sphere", "Sphere"], ["ask", "Ask"], ["digest", "Digest"], ["settings", "Settings"]];
+const SCREENS = [["today", "Today"], ["tasks", "Tasks"], ["connect", "Connect"], ["tensions", "Tensions"], ["graph", "Graph"], ["sphere", "Sphere"], ["ask", "Ask"], ["digest", "Digest"], ["settings", "Settings"]];
 let palItems = [], palAt = 0, palMode = "jump", palSeq = 0, palTimer;
 
 // Scores how well the typed letters match a title; null when they do not appear in order.
@@ -1023,6 +1186,8 @@ async function route() {
   shownHash = location.hash;
   const seq = ++routeSeq, live = () => seq === routeSeq;
   stopGraph();
+  hidePeek();
+  if (canSpeak) speechSynthesis.cancel();
   $("#side").classList.remove("open");
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   const view = parts[0] || "today";
@@ -1032,6 +1197,7 @@ async function route() {
     if (view === "note") await viewNote(live, arg);
     else if (view === "search") await viewSearch(live, arg);
     else if (view === "tag") viewTag(live, arg);
+    else if (view === "tasks") await viewTasks(live);
     else if (view === "connect") await viewConnect(live);
     else if (view === "tensions") await viewTensions(live);
     else if (view === "graph") await viewGraph(live);
@@ -1059,8 +1225,55 @@ document.addEventListener("keydown", (e) => {
 window.addEventListener("beforeunload", (e) => {
   if (dirty) e.preventDefault();
 });
+// ───────────── hover preview ─────────────
+const peek = $("#peek");
+let peekTimer;
+function hidePeek() {
+  clearTimeout(peekTimer);
+  peek.hidden = true;
+}
+const noteLink = (el) => el.closest?.('a[href^="#/note/"]');
+main.addEventListener("mouseover", (e) => {
+  const a = noteLink(e.target);
+  const n = a && byPath[safeDecode(a.getAttribute("href").slice(7))];
+  if (!n || !n.excerpt) return;
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    if (!a.isConnected) return;
+    peek.innerHTML = `<b>${esc(n.title)}</b><small>${esc(folderName(n.folder))} · ${plural(n.words, "word")}</small><p>${esc(n.excerpt)}</p>`;
+    peek.hidden = false;
+    const r = a.getBoundingClientRect(), h = peek.offsetHeight;
+    peek.style.left = Math.max(8, Math.min(r.left, innerWidth - 332)) + "px";
+    peek.style.top = (r.bottom + h + 12 > innerHeight ? r.top - h - 6 : r.bottom + 6) + "px";
+  }, 450);
+});
+main.addEventListener("mouseout", (e) => {
+  if (noteLink(e.target)) hidePeek();
+});
+main.addEventListener("scroll", hidePeek, { passive: true });
+
+// ───────────── changes made outside the app ─────────────
+// The server watches the folder. When its version moves, reload the list, and the open note if it was the one edited.
+setInterval(async () => {
+  if (document.hidden || dirty) return;
+  try {
+    const { version } = await api("/api/version");
+    if (version === lastVersion) return;
+    const [, view, rest] = location.hash.split("/");
+    const open = view === "note" ? safeDecode(rest || "") : null, before = open && byPath[open]?.mtime;
+    await loadNotes();
+    if (open && !dirty && byPath[open]?.mtime !== before) {
+      const y = main.scrollTop;
+      await route();
+      main.scrollTop = y;
+    }
+  } catch {}
+}, 4000);
+
+$("#back").onclick = () => history.back();
+$("#fwd").onclick = () => history.forward();
 $("#open-palette").onclick = () => openPalette();
 $("#new").onclick = () => openPalette("new");
 $("#menu").onclick = () => $("#side").classList.toggle("open");
 window.addEventListener("hashchange", route);
-loadNotes().then(route).catch((err) => page(`<h1 class="page">Ember could not start</h1><p class="lede">${esc(err.message)}</p>`));
+loadNotes().then(route).catch((err) => page(`<h1 class="page">Phlox could not start</h1><p class="lede">${esc(err.message)}</p>`));

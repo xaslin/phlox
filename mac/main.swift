@@ -1,4 +1,4 @@
-// Ember.app: a small native window around the local Ember server.
+// Phlox.app: a small native window around the local Phlox server.
 // It starts `node server.js` from the app's Resources, waits for it, and shows it in a web view.
 import Cocoa
 import WebKit
@@ -19,14 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
-        window.title = "Ember"
+        window.title = "Phlox"
         window.appearance = NSAppearance(named: .darkAqua)
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = NSColor(red: 0.039, green: 0.035, blue: 0.059, alpha: 1)
+        window.backgroundColor = NSColor(red: 0.063, green: 0.063, blue: 0.067, alpha: 1)
         web.setValue(false, forKey: "drawsBackground") // no white flash before the page paints
         window.minSize = NSSize(width: 520, height: 420)
         window.contentView = web
-        window.setFrameAutosaveName("EmberMain")
+        window.setFrameAutosaveName("PhloxMain")
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     func startServer() -> String? {
         let candidates = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]
         guard let node = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            return "Ember needs Node.js. Install it with: brew install node"
+            return "Phlox needs Node.js. Install it with: brew install node"
         }
         guard let script = Bundle.main.path(forResource: "server", ofType: "js", inDirectory: "app") else {
             return "The app bundle is missing its server files. Rebuild it with mac/build.sh."
@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         var env = ProcessInfo.processInfo.environment
         env["EMBER_PORT"] = String(port)
         p.environment = env
-        do { try p.run() } catch { return "Could not start the Ember server: \(error.localizedDescription)" }
+        do { try p.run() } catch { return "Could not start the Phlox server: \(error.localizedDescription)" }
         server = p
         return nil
     }
@@ -80,20 +80,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             DispatchQueue.main.async {
                 if up { self.web.load(URLRequest(url: home)) }
                 else if triesLeft > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.waitThenLoad(triesLeft: triesLeft - 1) } }
-                else { self.show("The Ember server did not start. Run `node server.js` in the ember folder to see why.") }
+                else { self.show("The Phlox server did not start. Run `node server.js` in the ember folder to see why.") }
             }
         }
     }
 
     func show(_ message: String) {
         let safe = message.replacingOccurrences(of: "<", with: "&lt;")
-        web.loadHTMLString("<body style='font:16px -apple-system;padding:60px;color:#bdb7d1;background:#0a090f'><h2>Ember could not open</h2><p>\(safe)</p></body>", baseURL: nil)
+        web.loadHTMLString("<body style='font:16px -apple-system;padding:60px;color:#b3b3b9;background:#101011'><h2>Phlox could not open</h2><p>\(safe)</p></body>", baseURL: nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ note: Notification) { server?.terminate() }
 
-    // Links that leave Ember open in the default browser.
+    // Links that leave Phlox open in the default browser.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url { NSWorkspace.shared.open(url) }
@@ -143,10 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Ember", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About Phlox", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Ember", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit Ember", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Hide Phlox", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Quit Phlox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
 

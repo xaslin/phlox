@@ -1,7 +1,7 @@
 {
-  "name": "ember",
-  "version": "0.1.0",
-  "description": "Local-first notes with a memory: resurface old notes, find missing links and contradictions, and explore a Markdown vault as a 3D sphere.",
+  "name": "phlox",
+  "version": "0.2.0",
+  "description": "Local-first notes with a memory: a daily briefing, missing links and contradictions found for you, and a Markdown vault you can explore as a 3D sphere.",
   "type": "module",
   "private": true,
   "scripts": {

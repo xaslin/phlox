@@ -1,4 +1,5 @@
-// Ember: a local server over a folder of Markdown notes.
+// Phlox (first called Ember): a local server over a folder of Markdown notes.
+// The EMBER_* variables, ~/.config/ember and the .ember folder keep their first names so nothing saved is lost.
 // Everything stays on this machine except the questions you choose to send to Claude.
 import http from "node:http";
 import fs from "node:fs";
@@ -130,7 +131,10 @@ function walk(dir, out = []) {
   return out;
 }
 
+const TASK = /^(\s*(?:[-*+]|\d+\.)\s+)\[( |x|X)\]\s+(.*)$/;
+let version = 0; // goes up every time the folder is re-read, so the page can tell when to refresh
 function buildIndex() {
+  version++;
   notes = [];
   byPath = new Map();
   byTitle = new Map();
@@ -146,8 +150,17 @@ function buildIndex() {
     const add = (t, w) => tf.set(t, (tf.get(t) || 0) + w);
     tokens(title).forEach((t) => add(t, 4));
     tokens(plain(body)).forEach((t) => add(t, 1));
+    const lineOffset = raw.split("\n").length - body.split("\n").length;
+    const tasks = [];
+    body.split("\n").forEach((line, i) => {
+      const m = line.match(TASK);
+      if (m) tasks.push({ line: lineOffset + i, done: m[2] !== " ", text: plain(m[3]) });
+    });
     const n = {
       path: rel,
+      mtime: stat.mtimeMs,
+      tasks,
+      low: plain(body).toLowerCase(),
       title,
       folder: rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "",
       tags: (Array.isArray(fm.tags) ? fm.tags : fm.tags ? String(fm.tags).split(/[\s,]+/) : []).map((t) => String(t).replace(/^#/, "")).filter(Boolean),
@@ -204,6 +217,40 @@ function cosine(a, b) {
 const isLinked = (a, b) => a.out.includes(b.path) || b.out.includes(a.path);
 const isHub = (n) => n.tags.includes("map") || n.tags.includes("session") || n.tags.includes("inbox") || n.tags.includes("memory");
 const brief = (n) => ({ path: n.path, title: n.title, folder: n.folder, tags: n.tags, created: n.created });
+const escRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const wordRe = (title, flags = "i") => new RegExp(`(?<![\\w[])${escRe(title)}(?![\\w\\]])`, flags);
+
+// Notes that name this one in their text without linking to it.
+function mentions(n) {
+  if (n.title.length < 4 || isHub(n)) return [];
+  const re = wordRe(n.title.toLowerCase(), "");
+  return notes
+    .filter((o) => o !== n && !o.out.includes(n.path) && !o.tags.includes("session") && re.test(o.low))
+    .slice(0, 8)
+    .map((o) => {
+      const at = o.low.search(re);
+      const text = plain(o.body);
+      return { ...brief(o), context: (at > 60 ? "…" : "") + text.slice(Math.max(0, at - 60), at + n.title.length + 80).trim() };
+    });
+}
+// Notes two links away: not linked to this one, but linked to something that is.
+function twoHops(n, k = 6) {
+  const direct = new Set([...n.in, ...n.out]);
+  const found = new Map();
+  for (const p of direct) {
+    const mid = byPath.get(p);
+    if (!mid || mid.tags.includes("map")) continue; // hubs link to everything and would drown the rest
+    for (const q of [...mid.in, ...mid.out]) {
+      if (q === n.path || direct.has(q)) continue;
+      (found.get(q) || found.set(q, []).get(q)).push(mid.title);
+    }
+  }
+  return [...found]
+    .filter(([q]) => byPath.has(q) && !isHub(byPath.get(q)))
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, k)
+    .map(([q, via]) => ({ ...brief(byPath.get(q)), via: [...new Set(via)].slice(0, 2) }));
+}
 
 function related(n, k = 6) {
   return notes
@@ -283,6 +330,28 @@ function pickToday() {
     const seen = opens.length ? `last opened ${opens.at(-1).slice(0, 10)}` : "never opened here";
     return { ...brief(n), excerpt: n.excerpt, source: n.source, why: `${when} · ${seen} · ${n.in.length} note${n.in.length === 1 ? "" : "s"} point to it` };
   });
+}
+// What changed and what is waiting, worked out on this machine each time Today opens.
+function briefing() {
+  const now = Date.now();
+  const changed = notes.filter((n) => now - n.mtime < 86400000 && !n.tags.includes("inbox")).sort((a, b) => b.mtime - a.mtime);
+  const missing = new Map();
+  for (const n of notes) {
+    if (n.tags.includes("session")) continue;
+    for (const t of n.linkTitles) {
+      if (!byTitle.has(t.toLowerCase())) (missing.get(t) || missing.set(t, []).get(t)).push(n.title);
+    }
+  }
+  const days = new Set(Object.values(state.opened).flat().map((d) => new Date(d).toLocaleDateString("en-CA")));
+  let streak = 0;
+  for (let d = new Date(); days.has(d.toLocaleDateString("en-CA")); d.setDate(d.getDate() - 1)) streak++;
+  return {
+    changed: changed.slice(0, 8).map(brief),
+    changedCount: changed.length,
+    openTasks: notes.reduce((a, n) => a + n.tasks.filter((t) => !t.done).length, 0),
+    missing: [...missing].sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([title, from]) => ({ title, from: [...new Set(from)].slice(0, 3) })),
+    streak,
+  };
 }
 function stats() {
   const real = notes.filter((n) => !isHub(n));
@@ -652,7 +721,8 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
 const LOCAL = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
 const routes = {
-  "GET /api/notes": () => ({ vault: cfg.vault, notes: notes.map((n) => ({ ...brief(n), words: n.words, in: n.in.length, out: n.out.length })) }),
+  "GET /api/version": () => ({ version }),
+  "GET /api/notes": () => ({ vault: cfg.vault, version, notes: notes.map((n) => ({ ...brief(n), words: n.words, in: n.in.length, out: n.out.length, mtime: n.mtime, excerpt: n.excerpt.slice(0, 220) })) }),
   "GET /api/note": (q) => {
     const n = byPath.get(q.get("path"));
     if (!n) throw httpError(404, "No such note");
@@ -664,7 +734,7 @@ const routes = {
       const line = o.body.split("\n").find((l) => l.toLowerCase().includes("[[" + n.title.toLowerCase())) || "";
       return { ...brief(o), context: plain(line).slice(0, 180) };
     });
-    return { ...brief(n), raw: n.raw, body: n.body, source: n.source, words: n.words, backlinks, related: related(n), opens: state.opened[n.path].length };
+    return { ...brief(n), raw: n.raw, body: n.body, source: n.source, words: n.words, chars: n.body.length, backlinks, mentions: mentions(n), hops: twoHops(n), related: related(n), opens: state.opened[n.path].length };
   },
   "PUT /api/note": (q, b) => {
     if (typeof b.raw !== "string") throw httpError(400, "Missing text");
@@ -691,7 +761,44 @@ const routes = {
     writeNote(rel, m ? raw.slice(0, m.index) + entry + raw.slice(m.index) : raw.trimEnd() + "\n" + entry);
     return { path: rel };
   },
-  "GET /api/today": () => ({ date: today(), picks: pickToday(), stats: stats(), hasKey: Boolean(apiKey()) }),
+  "GET /api/today": () => ({ date: today(), picks: pickToday(), stats: stats(), briefing: briefing(), hasKey: Boolean(apiKey()) }),
+  "POST /api/daily": () => {
+    const rel = `Daily/${today()}.md`;
+    if (!byPath.has(rel)) writeNote(rel, `---\ntags: [daily]\ncreated: ${today()}\n---\n\n# ${today()}\n\n`);
+    return { path: rel };
+  },
+  "GET /api/tasks": () => {
+    const groups = notes
+      .filter((n) => n.tasks.some((t) => !t.done))
+      .sort((a, b) => b.mtime - a.mtime)
+      .map((n) => ({ ...brief(n), tasks: n.tasks.filter((t) => !t.done) }));
+    return { groups, open: groups.reduce((a, g) => a + g.tasks.length, 0), done: notes.reduce((a, n) => a + n.tasks.filter((t) => t.done).length, 0) };
+  },
+  // Ticks or unticks one checkbox by rewriting that one line.
+  "POST /api/task": (q, b) => {
+    const n = byPath.get(b.path);
+    if (!n) throw httpError(404, "No such note");
+    const lines = n.raw.split("\n");
+    if (!Number.isInteger(b.line) || !TASK.test(lines[b.line] || "")) throw httpError(409, "That line changed on disk. Reopen the note.");
+    lines[b.line] = lines[b.line].replace(TASK, (_, pre, box, text) => `${pre}[${b.done ? "x" : " "}] ${text}`);
+    writeNote(n.path, lines.join("\n"));
+    return { ok: true };
+  },
+  // Turns the first plain mention of a note's title into a link to it.
+  "POST /api/mention": (q, b) => {
+    const from = byPath.get(b.from), to = byPath.get(b.to);
+    if (!from || !to) throw httpError(404, "No such note");
+    const head = from.raw.length - from.body.length;
+    const re = wordRe(to.title);
+    let done = false;
+    const body = from.body
+      .split(/(\[\[[^\]]*\]\]|`[^`]*`|\]\([^)]*\)|https?:\/\/\S+)/)
+      .map((part, i) => (i % 2 || done ? part : part.replace(re, (m) => ((done = true), m === to.title ? `[[${to.title}]]` : `[[${to.title}|${m}]]`))))
+      .join("");
+    if (!done) throw httpError(409, "Could not find the mention to link.");
+    writeNote(from.path, from.raw.slice(0, head) + body);
+    return { ok: true };
+  },
   "GET /api/connect": () => ({ pairs: suggestions() }),
   "POST /api/link": (q, b) => {
     const a = byPath.get(b.from), t = byPath.get(b.to);
@@ -711,7 +818,7 @@ const routes = {
   "GET /api/tensions": () => ({ tensions: tensions(), hasKey: Boolean(apiKey()) }),
   "POST /api/tensions/deep": async () => ({ findings: await deepTensions() }),
   "GET /api/graph": () => ({
-    nodes: notes.map((n) => ({ id: n.path, title: n.title, group: n.folder.split("/")[0] || "Home", degree: n.in.length + n.out.length, inn: n.in.length, out: n.out.length, words: n.words, created: n.created, excerpt: n.excerpt.slice(0, 190) })),
+    nodes: notes.map((n) => ({ id: n.path, title: n.title, group: n.folder.split("/")[0] || "Home", degree: n.in.length + n.out.length, hub: n.tags.includes("map"), inn: n.in.length, out: n.out.length, words: n.words, created: n.created, excerpt: n.excerpt.slice(0, 190) })),
     edges: notes.flatMap((n) => n.out.map((p) => [n.path, p])),
   }),
   "GET /api/search": (q) => ({ hits: search(q.get("q") || "") }),
@@ -728,6 +835,7 @@ const routes = {
       cfg.vault = v;
       loadState();
       buildIndex();
+      watchVault();
     }
     if (typeof b.apiKey === "string") {
       if (b.apiKey.trim()) cfg.apiKey = b.apiKey.trim();
@@ -759,7 +867,8 @@ const server = http.createServer(async (req, res) => {
       const body = req.method === "GET" ? {} : await readBody(req);
       return send(res, 200, await handler(url.searchParams, body));
     }
-    const file = path.join(HERE, "public", url.pathname === "/" ? "index.html" : path.normalize(url.pathname));
+    const asked = url.pathname === "/" ? "index.html" : url.pathname === "/favicon.ico" ? "logo.svg" : path.normalize(url.pathname);
+    const file = path.join(HERE, "public", asked);
     if (!file.startsWith(path.join(HERE, "public") + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) throw httpError(404, "Not found");
     res.writeHead(200, { "content-type": MIME[path.extname(file)] || "application/octet-stream", "cache-control": "no-store" });
     fs.createReadStream(file).pipe(res);
@@ -770,11 +879,30 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Edits made outside the app (in Obsidian, in an editor, by a script) are picked up within a moment.
+let watcher = null, watchTimer = null;
+function watchVault() {
+  if (watcher) watcher.close();
+  watcher = null;
+  if (!fs.existsSync(cfg.vault)) return;
+  try {
+    watcher = fs.watch(cfg.vault, { recursive: true }, (event, file) => {
+      if (!file || !String(file).toLowerCase().endsWith(".md") || String(file).split(path.sep).some((p) => p.startsWith("."))) return;
+      clearTimeout(watchTimer);
+      watchTimer = setTimeout(buildIndex, 250);
+    });
+    watcher.on("error", () => {});
+  } catch {
+    // watching is a convenience; "Re-read the folder" in Settings still works without it
+  }
+}
+
 // Remember the folder the first time it is found, so the Mac app opens the same one.
 if (firstRun && fs.existsSync(cfg.vault)) saveConfig();
 loadState();
 buildIndex();
+watchVault();
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Ember is serving ${notes.length} notes from ${cfg.vault}`);
+  console.log(`Phlox is serving ${notes.length} notes from ${cfg.vault}`);
   console.log(`Open http://127.0.0.1:${PORT}`);
 });

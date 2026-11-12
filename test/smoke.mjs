@@ -166,6 +166,33 @@ async function run() {
   check("edit of a missing note is a 404", (await call("PUT", "/api/note", { path: "Nope.md", raw: "x" })).status === 404);
   check("edit without text is refused", (await call("PUT", "/api/note", { path: "Home.md" })).status === 400);
 
+  // tasks
+  r = await call("GET", "/api/tasks");
+  const group = r.data.groups.find((g) => g.title === "Sourdough");
+  check("tasks lists open checkboxes", r.data.open === 1 && r.data.done === 1 && group?.tasks[0].text === "Buy rye flour", JSON.stringify(r.data));
+  r = await call("POST", "/api/task", { path: group.path, line: group.tasks[0].line, done: true });
+  check("ticking a task rewrites its line", r.status === 200 && read("Cooking/Sourdough.md").includes("- [x] Buy rye flour"));
+  check("ticked task leaves the list", (await call("GET", "/api/tasks")).data.open === 0);
+  check("ticking a line that is not a task is refused", (await call("POST", "/api/task", { path: group.path, line: 0, done: true })).status === 409);
+
+  // mentions, two hops, briefing, daily note
+  r = await note("Cooking/Starter Care.md");
+  check("finds unlinked mentions", r.data.mentions.some((m) => m.title === "Rye Loaf") === false && Array.isArray(r.data.mentions));
+  fs.writeFileSync(path.join(vault, "Cooking/Rye Loaf.md"), read("Cooking/Rye Loaf.md") + "\nGood starter care matters here.\n");
+  await new Promise((res) => setTimeout(res, 700));
+  r = await note("Cooking/Starter Care.md");
+  check("picks up an edit made outside the app", r.data.mentions.some((m) => m.title === "Rye Loaf"), JSON.stringify(r.data.mentions));
+  r = await call("POST", "/api/mention", { from: "Cooking/Rye Loaf.md", to: "Cooking/Starter Care.md" });
+  check("linking a mention keeps the wording", r.status === 200 && read("Cooking/Rye Loaf.md").includes("Good [[Starter Care|starter care]] matters"), read("Cooking/Rye Loaf.md"));
+  r = await note("Home.md");
+  check("finds notes two links away", r.data.hops.some((h) => h.title === "Starter Care" && h.via.includes("Sourdough")), JSON.stringify(r.data.hops));
+  r = await call("GET", "/api/today");
+  check("briefing lists links to unwritten notes", r.data.briefing.missing.some((m) => m.title === "Missing Note"));
+  check("briefing counts changed notes", r.data.briefing.changedCount >= 1);
+  r = await call("POST", "/api/daily", {});
+  check("daily note is created once", /^Daily\/\d{4}-\d{2}-\d{2}\.md$/.test(r.data.path) && (await call("POST", "/api/daily", {})).data.path === r.data.path);
+  check("version moves when notes change", (await call("GET", "/api/version")).data.version > 1);
+
   // graph
   r = await call("GET", "/api/graph");
   const ids = new Set(r.data.nodes.map((n) => n.id));
