@@ -110,6 +110,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         decisionHandler(.allow)
     }
 
+    // The microphone, used for dictation. Only the Phlox page itself may ask, and only for sound.
+    @available(macOS 12.0, *)
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let ours = origin.host == "127.0.0.1" && origin.port == port
+        decisionHandler(ours && type == .microphone ? .prompt : .deny)
+    }
     // window.prompt, used for naming a new note.
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {

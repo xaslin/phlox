@@ -227,6 +227,51 @@ function wireSpeak(getText) {
   };
 }
 
+// Dictation uses the speech recognition built into the browser or the Mac window, when it has one.
+// The button only appears where it works. Words land in the capture box to check before saving.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let listening = null;
+const micBtn = Recognition ? `<button type="button" class="icon" id="dictate" title="Dictate" aria-label="Dictate" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>` : "";
+function stopDictation() {
+  if (listening) listening.stop();
+}
+function wireDictation(input) {
+  const btn = $("#dictate");
+  if (!btn) return;
+  btn.onclick = () => {
+    if (listening) return stopDictation();
+    const rec = new Recognition();
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    rec.continuous = true;
+    const before = input.value.trim();
+    rec.onresult = (e) => {
+      const heard = Array.from(e.results, (r) => r[0].transcript).join("").trim();
+      input.value = [before, heard].filter(Boolean).join(" ");
+    };
+    rec.onerror = (e) => {
+      const why = { "not-allowed": "Phlox is not allowed to use the microphone.", "service-not-allowed": "Speech recognition is turned off on this Mac.", "no-speech": "Nothing was heard." };
+      toast(why[e.error] || "Dictation stopped.");
+    };
+    rec.onend = () => {
+      listening = null;
+      btn.classList.remove("on");
+      btn.setAttribute("aria-pressed", "false");
+      btn.title = "Dictate";
+      input.focus();
+    };
+    try {
+      rec.start();
+    } catch {
+      return toast("Dictation could not start.");
+    }
+    listening = rec;
+    btn.classList.add("on");
+    btn.setAttribute("aria-pressed", "true");
+    btn.title = "Stop dictating";
+  };
+}
+
 async function viewToday(live) {
   const [d, c, t] = await Promise.all([api("/api/today"), api("/api/connect"), api("/api/tensions")]);
   if (!live()) return;
@@ -243,7 +288,7 @@ async function viewToday(live) {
   page(`
     <h1 class="page">${esc(nice)}</h1>
     <p class="lede" id="brief">${lines.join(" ")}</p>
-    <form class="capture" id="capture"><input name="text" placeholder="Capture a thought. It goes to your Inbox." autocomplete="off" aria-label="Capture a thought"><button class="btn primary">Capture</button></form>
+    <form class="capture" id="capture"><input name="text" placeholder="Capture a thought. It goes to your Inbox." autocomplete="off" aria-label="Capture a thought">${micBtn}<button class="btn primary">Capture</button></form>
     <h2 class="sec">Worth another look <small>not opened in a while</small></h2>
     ${d.picks.map((p) => `
       <article class="entry">
@@ -267,8 +312,10 @@ async function viewToday(live) {
     location.hash = href(path);
   });
   wireCreate();
+  wireDictation($("#capture").text);
   $("#capture").addEventListener("submit", guard(async (e) => {
     e.preventDefault();
+    stopDictation();
     const input = e.target.text;
     if (!input.value.trim()) return;
     await api("/api/capture", { body: { text: input.value } });
@@ -1188,6 +1235,7 @@ async function route() {
   stopGraph();
   hidePeek();
   if (canSpeak) speechSynthesis.cancel();
+  stopDictation();
   $("#side").classList.remove("open");
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   const view = parts[0] || "today";

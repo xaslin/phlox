@@ -96,6 +96,7 @@ input.field:focus, textarea.field:focus, .capture input:focus { border-color: va
 ::placeholder { color: var(--faint); }
 .capture { display: flex; gap: 8px; margin: 0 0 8px; }
 .capture input { flex: 1; min-width: 0; }
+.capture .icon { align-self: center; }
 mark { background: rgba(164, 139, 245, .28); color: inherit; border-radius: 2px; padding: 0 1px; }
 
 /* lists of things: no boxes, just lines */

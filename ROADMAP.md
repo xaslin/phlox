@@ -4,7 +4,6 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Next
 
-- [ ] **Dictation.** A microphone button on capture, where the Mac window allows speech recognition.
 - [ ] **Templates.** New notes can start from a file in a `Templates` folder.
 - [ ] **Rename a note.** Rename the file and rewrite every `[[link]]` that pointed at it.
 - [ ] **Snooze on Today.** "Not today" swaps a pick for another and keeps it away for a week.
@@ -13,6 +12,7 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Done
 
+- [x] Dictation: a microphone button on Today's capture box, shown where speech recognition is available; the Mac window asks for the microphone (2026-11-12)
 - [x] Renamed Phlox; flat grey-and-violet interface with a title bar and status bar; flower logo (2026-11-12)
 - [x] Briefing on Today, Tasks screen, daily note, read aloud (2026-11-12)
 - [x] Unlinked mentions, notes two links away, hover previews, `[[` autocomplete, click-to-create links (2026-11-12)

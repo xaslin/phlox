@@ -21,6 +21,7 @@ Around those screens:
 - **⌘K** opens a palette: type a note's name to jump to it, or some words to search inside every note. It also creates notes.
 - **A note** shows, beside the text: its outline, what links to it, notes that mention it without linking (one click links them), notes two links away, and notes that read like it. Hovering a link previews the note. Links to notes that do not exist yet create them when clicked.
 - **Editing** (⌘E) shows a live preview. Typing `[[` offers note titles. ⌘S saves, and leaving with unsaved changes asks first.
+- **Dictation**: the microphone button in Today's capture box types what you say into it, for you to check before pressing Capture. It shows only where the browser or the Mac window offers speech recognition; the Mac app asks for the microphone the first time.
 - **Read aloud**: the speaker button reads the briefing, a note or an answer with the Mac's built-in voice.
 - **Outside edits**: change a file in Obsidian or any editor and Phlox picks it up within a few seconds.
 
@@ -62,7 +63,7 @@ This builds `build/Phlox.app`, a native window that starts the server for you. I
 
 ## What leaves your Mac
 
-Nothing, unless you use Ask, Digest or the deeper read. Those send the relevant notes to Anthropic with your key and are billed to it. Ask sends up to 12 matching notes; the deeper read sends every note except hubs and session logs.
+Nothing, unless you use Ask, Digest or the deeper read. Dictation uses Apple's speech recognition, which may send the audio to Apple. Those send the relevant notes to Anthropic with your key and are billed to it. Ask sends up to 12 matching notes; the deeper read sends every note except hubs and session logs.
 
 The server only listens on 127.0.0.1 and refuses requests from other origins.
 

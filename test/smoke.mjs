@@ -213,6 +213,11 @@ async function run() {
 
   // the page
   for (const f of ["/", "/app.js", "/style.css", "/logo.svg"]) check(`serves ${f}`, (await fetch(BASE + f)).status === 200);
+  const appJs = await (await fetch(BASE + "/app.js")).text();
+  const mic = appJs.match(/const micBtn = Recognition \? `(<button[^>]*>)/);
+  check("dictation button only where speech recognition exists", !!mic);
+  check("dictation button does not submit the capture form", !!mic && /type="button"/.test(mic[1]));
+  check("dictation stops when leaving the page", /speechSynthesis\.cancel\(\);\s*stopDictation\(\);/.test(appJs));
 
   // Claude features without a key: refused before anything is sent
   check("ask needs a key", (await call("POST", "/api/ask", { question: "what about bread?" })).status === 409);
