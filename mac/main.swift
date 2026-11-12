@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         p.currentDirectoryURL = URL(fileURLWithPath: script).deletingLastPathComponent()
         var env = ProcessInfo.processInfo.environment
         env["EMBER_PORT"] = String(port)
+        env["EMBER_PARENT"] = String(ProcessInfo.processInfo.processIdentifier) // the server exits when this app does
         p.environment = env
         do { try p.run() } catch { return "Could not start the Phlox server: \(error.localizedDescription)" }
         server = p

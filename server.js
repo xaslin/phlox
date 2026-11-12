@@ -897,6 +897,18 @@ function watchVault() {
   }
 }
 
+// Started by the Mac app: stop when the app goes away, however it went, so no old server is left holding the port.
+const parent = Number(process.env.EMBER_PARENT);
+if (parent) {
+  setInterval(() => {
+    try {
+      process.kill(parent, 0);
+    } catch {
+      process.exit(0);
+    }
+  }, 2000).unref();
+}
+
 // Remember the folder the first time it is found, so the Mac app opens the same one.
 if (firstRun && fs.existsSync(cfg.vault)) saveConfig();
 loadState();
