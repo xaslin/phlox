@@ -22,6 +22,7 @@ Around those screens:
 - **Templates.** Put notes in a folder called `Templates` and the palette offers each one when you create a note: "Create “Name” from Meeting". `{{title}}`, `{{date}}` and `{{time}}` are filled in, as in Obsidian, and the new note's `created` date is set to today. Templates are kept out of Today's picks and the orphan count.
 - **A note** shows, beside the text: its outline, what links to it, notes that mention it without linking (one click links them), notes two links away, and notes that read like it. Hovering a link previews the note. Links to notes that do not exist yet create them when clicked.
 - **Editing** (⌘E) shows a live preview. Typing `[[` offers note titles. ⌘S saves, and leaving with unsaved changes asks first.
+- **Renaming.** Rename in a note's title bar renames the file and rewrites every `[[link]]` to it in the other notes, keeping any `|alias` or `#heading`. A name another note already has is refused.
 - **Dictation**: the microphone button in Today's capture box types what you say into it, for you to check before pressing Capture. It shows only where the browser or the Mac window offers speech recognition; the Mac app asks for the microphone the first time.
 - **Read aloud**: the speaker button reads the briefing, a note or an answer with the Mac's built-in voice.
 - **Outside edits**: change a file in Obsidian or any editor and Phlox picks it up within a few seconds.

@@ -205,6 +205,21 @@ async function run() {
   check("daily note is created once", /^Daily\/\d{4}-\d{2}-\d{2}\.md$/.test(r.data.path) && (await call("POST", "/api/daily", {})).data.path === r.data.path);
   check("version moves when notes change", (await call("GET", "/api/version")).data.version > 1);
 
+  // renaming a note rewrites the links to it
+  r = await call("POST", "/api/rename", { path: "Cooking/Starter Care.md", title: "Feeding the Starter" });
+  check("rename moves the file", r.status === 200 && r.data.path === "Cooking/Feeding the Starter.md" && fs.existsSync(path.join(vault, "Cooking/Feeding the Starter.md")) && !fs.existsSync(path.join(vault, "Cooking/Starter Care.md")), JSON.stringify(r.data));
+  check("rename counts the notes it updated", r.data.updated === 2, JSON.stringify(r.data));
+  check("rename keeps link aliases", read("Cooking/Sourdough.md").includes("[[Feeding the Starter|how to feed it]]"));
+  check("rename rewrites aliased mentions", read("Cooking/Rye Loaf.md").includes("[[Feeding the Starter|starter care]]"));
+  check("rename updates the note's own heading", read("Cooking/Feeding the Starter.md").includes("# Feeding the Starter\n"));
+  r = await note("Cooking/Feeding the Starter.md");
+  check("renamed note keeps its backlinks", r.data.backlinks.some((b) => b.title === "Sourdough"), JSON.stringify(r.data.backlinks));
+  check("rename refuses a title already taken", (await call("POST", "/api/rename", { path: "Cooking/Rye Loaf.md", title: "sourdough" })).status === 409);
+  check("rename refuses an empty title", (await call("POST", "/api/rename", { path: "Cooking/Rye Loaf.md", title: " / " })).status === 400);
+  r = await call("POST", "/api/rename", { path: "Cooking/Rye Loaf.md", title: "../../escape" });
+  check("rename stays in the note's folder", !fs.existsSync(path.join(tmp, "escape.md")) && (r.status !== 200 || r.data.path.startsWith("Cooking/")), JSON.stringify(r.data));
+  if (r.status === 200) await call("POST", "/api/rename", { path: r.data.path, title: "Rye Loaf" });
+
   // graph
   r = await call("GET", "/api/graph");
   const ids = new Set(r.data.nodes.map((n) => n.id));

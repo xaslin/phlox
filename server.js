@@ -489,6 +489,37 @@ function freeTitle(title) {
   return t;
 }
 
+// ───────────── renaming ─────────────
+// Renames a note's file and rewrites every [[link]] to it, keeping any |alias or #heading.
+function renameNote(n, wanted) {
+  const title = cleanTitle(wanted).replace(/^\.+\s*/, "");
+  if (!title) throw httpError(400, "Give the note a name");
+  if (title === n.title) return { path: n.path, updated: 0 };
+  const other = byTitle.get(title.toLowerCase());
+  if (other && other !== n) throw httpError(409, `There is already a note called ${other.title}`);
+  const rel = (n.folder ? n.folder + "/" : "") + title + ".md";
+  const full = safePath(rel), oldFull = safePath(n.path);
+  const sameFile = rel.toLowerCase() === n.path.toLowerCase(); // only the capitals change
+  if (!sameFile && fs.existsSync(full)) throw httpError(409, "A file with that name is already in the folder");
+  const link = new RegExp(`(!?\\[\\[)\\s*${escRe(n.title)}\\s*(?=[\\]|#])`, "gi");
+  let updated = 0;
+  for (const o of notes) {
+    let raw = o.raw.replace(link, `$1${title}`);
+    if (o === n) raw = raw.replace(new RegExp(`^# ${escRe(n.title)}[ \\t]*$`, "m"), `# ${title}`);
+    if (raw === o.raw) continue;
+    fs.writeFileSync(safePath(o.path), raw);
+    if (o !== n) updated++;
+  }
+  fs.renameSync(oldFull, full);
+  if (state.opened[n.path]) {
+    state.opened[rel] = state.opened[n.path];
+    delete state.opened[n.path];
+    saveState();
+  }
+  buildIndex();
+  return { path: rel, updated };
+}
+
 // ───────────── templates ─────────────
 // Any note inside a folder called Templates is a starting point for new notes.
 const isTemplate = (n) => /(^|\/)templates$/i.test(n.folder);
@@ -767,6 +798,11 @@ const routes = {
     }
     writeNote(rel, raw);
     return { path: rel };
+  },
+  "POST /api/rename": (q, b) => {
+    const n = byPath.get(b.path);
+    if (!n) throw httpError(404, "No such note");
+    return renameNote(n, b.title);
   },
   "POST /api/capture": (q, b) => {
     const text = String(b.text || "").trim();

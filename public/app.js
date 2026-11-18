@@ -390,10 +390,11 @@ async function viewNote(live, path) {
       </div>`, {
       cls: "note",
       title: crumbs,
-      actions: `${speakBtn}<button class="btn" id="edit" title="Edit (⌘E)">Edit</button>`,
+      actions: `${speakBtn}<button class="btn" id="rename" title="Rename this note and update links to it">Rename</button><button class="btn" id="edit" title="Edit (⌘E)">Edit</button>`,
       stat: `${plural(n.backlinks.length, "backlink")} · ${plural(n.words, "word")} · ${plural(n.chars, "character")}`,
     });
     $("#edit").onclick = edit;
+    $("#rename").onclick = guard(rename);
     wireSpeak(() => $(".md", main).innerText);
     wireCreate();
     $$("[data-head]", main).forEach((a) => (a.onclick = (e) => {
@@ -425,6 +426,18 @@ async function viewNote(live, path) {
         toast(err.message);
       }
     }));
+  };
+
+  // Renames the file and rewrites every [[link]] that pointed at it.
+  const rename = async () => {
+    const title = prompt(`Rename "${n.title}" to:`, n.title);
+    if (title === null || !title.trim() || title.trim() === n.title) return;
+    const r = await api("/api/rename", { body: { path: n.path, title } });
+    const recent = JSON.parse(localStorage.getItem("ember-recent") || "[]").map((p) => (p === n.path ? r.path : p));
+    localStorage.setItem("ember-recent", JSON.stringify(recent));
+    toast(r.updated ? `Renamed, and updated links in ${plural(r.updated, "note")}` : "Renamed");
+    await loadNotes();
+    location.hash = href(r.path);
   };
 
   const edit = () => {
