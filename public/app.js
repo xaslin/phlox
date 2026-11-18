@@ -1181,8 +1181,8 @@ function openPalette(mode = "jump") {
   buildPalette();
   pq.focus();
 }
-async function createNote(title) {
-  const { path } = await api("/api/note", { body: { title } });
+async function createNote(title, template) {
+  const { path } = await api("/api/note", { body: { title, template } });
   await loadNotes();
   editNext = path;
   location.hash = href(path);
@@ -1191,8 +1191,12 @@ function buildPalette(inside = []) {
   const q = pq.value.trim(), ql = q.toLowerCase();
   const items = [];
   const noteItem = (n, group, hint) => ({ group, html: hilite(n.title, group === "Notes" ? ql : ""), hint: hint ?? folderName(n.folder), run: () => (location.hash = href(n.path)) });
+  // Notes in a Templates folder, offered as starting points for a new note.
+  const fromTemplates = () => notes.filter((n) => /(^|\/)templates$/i.test(n.folder)).sort((a, b) => a.title.localeCompare(b.title))
+    .forEach((t) => items.push({ group: "From a template", html: `Create “${esc(q)}” from ${esc(t.title)}`, hint: t.folder, run: () => createNote(q, t.path) }));
   if (palMode === "new") {
     if (q) items.push({ group: "New note", html: `Create “${esc(q)}”`, hint: "opens in the editor", run: () => createNote(q) });
+    if (q) fromTemplates();
   } else if (!q) {
     JSON.parse(localStorage.getItem("ember-recent") || "[]").map((p) => byPath[p]).filter(Boolean).forEach((n) => items.push(noteItem(n, "Recently opened")));
     SCREENS.forEach(([v, name]) => items.push({ group: "Go to", html: name, hint: "", run: () => (location.hash = "#/" + v) }));
@@ -1204,6 +1208,7 @@ function buildPalette(inside = []) {
     SCREENS.filter(([, name]) => name.toLowerCase().startsWith(ql)).forEach(([v, name]) => items.push({ group: "Go to", html: name, hint: "", run: () => (location.hash = "#/" + v) }));
     items.push({ group: "Actions", html: `Search inside every note for “${esc(q)}”`, hint: "", run: () => (location.hash = "#/search/" + encodeURIComponent(q)) });
     if (!byTitle[ql]) items.push({ group: "Actions", html: `Create a note called “${esc(q)}”`, hint: "", run: () => createNote(q) });
+    if (!byTitle[ql]) fromTemplates();
   }
   palItems = items;
   palAt = Math.min(palAt, Math.max(0, items.length - 1));

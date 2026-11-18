@@ -16,6 +16,8 @@ const vault = path.join(tmp, "vault");
 const files = {
   "Home.md": "---\ntags: [map]\n---\n\n# Home\n\nStart at [[Sourdough]] or [[Bike Tour]].\n",
   "Inbox.md": "---\ntags: [inbox]\n---\n\n# Inbox\n",
+  "Templates/Trip Plan.md": "---\ntags: [trip]\ncreated: 2024-01-01\n---\n\n# {{title}}\n\nPlanned on {{date}} at {{ time }}.\n\n## Route\n",
+  "Templates/Plain.md": "# {{Title}}\n\nWhat it is.\n",
   "Cooking/Sourdough.md":
     "---\ntags: [recipe, bread]\ncreated: 2025-01-10\n---\n\n# Sourdough\n\nA wet dough with long fermentation gives the loaf an open crumb and a sour flavour that keeps for days.\n\n## Timing\n\nThe starter needs 35 days before it is strong enough to raise a loaf.\n\nMost bakers say the starter takes 42 days to mature fully.\n\n- [ ] Buy rye flour\n- [x] Feed the starter\n\nSee [[Starter Care|how to feed it]] and [[Missing Note]].\n",
   "Cooking/Starter Care.md":
@@ -86,7 +88,7 @@ async function run() {
 
   // index
   let r = await call("GET", "/api/notes");
-  check("lists every note", r.data.notes.length === 7, `got ${r.data.notes.length}`);
+  check("lists every note", r.data.notes.length === 9, `got ${r.data.notes.length}`);
   const care = r.data.notes.find((n) => n.title === "Starter Care");
   check("reads block-style tag lists", care && care.tags.join() === "recipe,bread", JSON.stringify(care && care.tags));
   const pack = r.data.notes.find((n) => n.title === "Packing List");
@@ -115,7 +117,7 @@ async function run() {
   check("today never picks hubs", !r.data.picks.some((p) => ["Home", "Inbox"].includes(p.title)));
   const first = r.data.picks.map((p) => p.path).join();
   check("today is stable within a day", (await call("GET", "/api/today")).data.picks.map((p) => p.path).join() === first);
-  check("today counts notes and links", r.data.stats.notes === 7 && r.data.stats.links >= 3);
+  check("today counts notes and links", r.data.stats.notes === 9 && !r.data.stats.orphans.some((o) => o.path.startsWith("Templates/")) && r.data.stats.links >= 3);
 
   // connect and link
   r = await call("GET", "/api/connect");
@@ -159,6 +161,16 @@ async function run() {
   check("create never overwrites", r.data.path === "Sourdough 2.md" && read("Cooking/Sourdough.md").includes("open crumb"));
   r = await call("POST", "/api/note", { title: "" });
   check("create without a name still works", r.status === 200 && r.data.path.startsWith("Untitled"));
+  r = await call("POST", "/api/note", { title: "Coast Ride", folder: "Trips", template: "Templates/Trip Plan.md" });
+  const plan = r.status === 200 ? read("Trips/Coast Ride.md") : "";
+  check("create from a template fills title, date and time", /# Coast Ride\n\nPlanned on \d{4}-\d{2}-\d{2} at \d{2}:\d{2}\.\n\n## Route/.test(plan), plan);
+  check("a note from a template keeps its tags and is dated today", plan.includes("tags: [trip]") && !plan.includes("2024-01-01") && /created: \d{4}-\d{2}-\d{2}/.test(plan), plan);
+  r = await call("POST", "/api/note", { title: "Bare Idea", template: "Templates/Plain.md" });
+  const bare = r.status === 200 ? read("Bare Idea.md") : "";
+  check("a template without frontmatter gets a created date", /^---\ncreated: \d{4}-\d{2}-\d{2}\n---\n\n# Bare Idea\n\nWhat it is\./.test(bare), bare);
+  check("only notes in a Templates folder can be templates", (await call("POST", "/api/note", { title: "Nope", template: "Cooking/Sourdough.md" })).status === 404 && !fs.existsSync(path.join(vault, "Nope.md")));
+  check("templates stay out of Today's picks", !(await call("GET", "/api/today")).data.picks.some((p) => p.path.startsWith("Templates/")));
+  check("the palette offers templates", /From a template/.test(await (await fetch(BASE + "/app.js")).text()));
   r = await call("PUT", "/api/note", { path: "Oven notes 2025.md", raw: "# Oven\n\nRuns 15 degrees hot. See [[Sourdough]]." });
   check("edit saves", r.status === 200 && read("Oven notes 2025.md").endsWith("See [[Sourdough]].\n"));
   r = await note("Cooking/Sourdough.md");
@@ -224,7 +236,7 @@ async function run() {
   check("deep read needs a key", (await call("POST", "/api/tensions/deep", {})).status === 409);
   check("digest refuses short text", (await call("POST", "/api/digest", { text: "too short" })).status === 400);
 
-  check("reindex re-reads the folder", (await call("POST", "/api/reindex", {})).data.notes >= 9);
+  check("reindex re-reads the folder", (await call("POST", "/api/reindex", {})).data.notes >= 11);
   check("server printed no errors", !/Error|at .*server\.js/.test(log), log);
 }
 

@@ -4,7 +4,6 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Next
 
-- [ ] **Templates.** New notes can start from a file in a `Templates` folder.
 - [ ] **Rename a note.** Rename the file and rewrite every `[[link]]` that pointed at it.
 - [ ] **Snooze on Today.** "Not today" swaps a pick for another and keeps it away for a week.
 - [ ] **Graph filters.** Toggle folders on and off from the legend; drag a dot to pin it.
@@ -12,6 +11,7 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Done
 
+- [x] Templates: any note in a `Templates` folder is offered in the ⌘K palette as a starting point; `{{title}}`, `{{date}}` and `{{time}}` are filled in and the new note is dated today (2026-11-18)
 - [x] Dictation: a microphone button on Today's capture box, shown where speech recognition is available; the Mac window asks for the microphone (2026-11-12)
 - [x] Renamed Phlox; flat grey-and-violet interface with a title bar and status bar; flower logo (2026-11-12)
 - [x] Briefing on Today, Tasks screen, daily note, read aloud (2026-11-12)

@@ -297,8 +297,8 @@ function daysBetween(a, b) {
 }
 function pickToday() {
   const date = today();
-  let pool = notes.filter((n) => !isHub(n) && n.words > 40);
-  if (pool.length < 3) pool = notes.filter((n) => !isHub(n)); // a small folder: short notes are better than none
+  let pool = notes.filter((n) => !isHub(n) && !isTemplate(n) && n.words > 40);
+  if (pool.length < 3) pool = notes.filter((n) => !isHub(n) && !isTemplate(n)); // a small folder: short notes are better than none
   let paths = state.shown[date];
   if (!paths || paths.some((p) => !byPath.has(p))) {
     const recent = new Set(Object.entries(state.shown).filter(([d]) => daysBetween(d, date) <= 6).flatMap(([, v]) => v));
@@ -354,7 +354,7 @@ function briefing() {
   };
 }
 function stats() {
-  const real = notes.filter((n) => !isHub(n));
+  const real = notes.filter((n) => !isHub(n) && !isTemplate(n));
   return {
     notes: notes.length,
     words: notes.reduce((a, n) => a + n.words, 0),
@@ -487,6 +487,19 @@ function freeTitle(title) {
   const base = t;
   while (byTitle.has(t.toLowerCase())) t = `${base} ${i++}`;
   return t;
+}
+
+// ───────────── templates ─────────────
+// Any note inside a folder called Templates is a starting point for new notes.
+const isTemplate = (n) => /(^|\/)templates$/i.test(n.folder);
+// Fills {{title}}, {{date}} and {{time}} the way Obsidian's core Templates plugin does, and dates the new note today.
+function fillTemplate(raw, title) {
+  const values = { title, date: today(), time: new Date().toTimeString().slice(0, 5) };
+  const out = raw.replace(/\{\{\s*(title|date|time)\s*\}\}/gi, (_, k) => values[k.toLowerCase()]);
+  const fm = out.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!fm) return `---\ncreated: ${today()}\n---\n\n${out}`;
+  const inner = /^created:.*$/m.test(fm[1]) ? fm[1].replace(/^created:.*$/m, `created: ${today()}`) : `${fm[1]}\ncreated: ${today()}`;
+  return `---\n${inner}\n---\n` + out.slice(fm[0].length);
 }
 
 // ───────────── Claude ─────────────
@@ -746,7 +759,13 @@ const routes = {
     const title = freeTitle(b.title);
     const folder = cleanTitle(b.folder || "").replace(/^\.+/, "");
     const rel = (folder ? folder + "/" : "") + title + ".md";
-    writeNote(rel, `---\ntags: []\ncreated: ${today()}\n---\n\n# ${title}\n\n`);
+    let raw = `---\ntags: []\ncreated: ${today()}\n---\n\n# ${title}\n\n`;
+    if (b.template) {
+      const t = byPath.get(b.template);
+      if (!t || !isTemplate(t)) throw httpError(404, "No such template");
+      raw = fillTemplate(t.raw, title);
+    }
+    writeNote(rel, raw);
     return { path: rel };
   },
   "POST /api/capture": (q, b) => {
