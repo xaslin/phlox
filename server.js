@@ -36,9 +36,9 @@ function saveConfig() {
 const apiKey = () => cfg.apiKey || process.env.ANTHROPIC_API_KEY || "";
 
 const stateFile = () => path.join(cfg.vault, ".ember", "state.json");
-let state = { opened: {}, shown: {}, dismissed: [] };
+let state = { opened: {}, shown: {}, dismissed: [], snoozed: {} };
 function loadState() {
-  state = { opened: {}, shown: {}, dismissed: [], ...readJSON(stateFile(), {}) };
+  state = { opened: {}, shown: {}, dismissed: [], snoozed: {}, ...readJSON(stateFile(), {}) };
 }
 function saveState() {
   fs.mkdirSync(path.dirname(stateFile()), { recursive: true });
@@ -295,41 +295,70 @@ function seeded(str) {
 function daysBetween(a, b) {
   return Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 }
-function pickToday() {
-  const date = today();
+function addDays(date, days) {
+  const d = new Date(date + "T12:00");
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString("en-CA");
+}
+const snoozed = (p, date) => (state.snoozed[p] || "") > date;
+// Notes worth bringing back today, best first, leaving out anything snoozed or already in `skip`.
+function rankToday(date, skip = new Set()) {
   let pool = notes.filter((n) => !isHub(n) && !isTemplate(n) && n.words > 40);
   if (pool.length < 3) pool = notes.filter((n) => !isHub(n) && !isTemplate(n)); // a small folder: short notes are better than none
+  pool = pool.filter((n) => !snoozed(n.path, date) && !skip.has(n.path));
+  const recent = new Set(Object.entries(state.shown).filter(([d]) => d !== date && daysBetween(d, date) <= 6).flatMap(([, v]) => v));
+  return pool
+    .filter((n) => !recent.has(n.path) || pool.length <= 6)
+    .map((n) => {
+      const last = (state.opened[n.path] || []).at(-1);
+      const idle = last ? daysBetween(last.slice(0, 10), date) : 30;
+      const age = daysBetween(n.created, date);
+      const weight = Math.log(2 + age) * Math.log(2 + idle) * (1 + Math.log(1 + n.in.length) / 2);
+      return { n, s: weight * (0.5 + seeded(date + n.path)) };
+    })
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.n);
+}
+function pickToday() {
+  const date = today();
   let paths = state.shown[date];
-  if (!paths || paths.some((p) => !byPath.has(p))) {
-    const recent = new Set(Object.entries(state.shown).filter(([d]) => daysBetween(d, date) <= 6).flatMap(([, v]) => v));
-    const scored = pool
-      .filter((n) => !recent.has(n.path) || pool.length <= 6)
-      .map((n) => {
-        const last = (state.opened[n.path] || []).at(-1);
-        const idle = last ? daysBetween(last.slice(0, 10), date) : 30;
-        const age = daysBetween(n.created, date);
-        const weight = Math.log(2 + age) * Math.log(2 + idle) * (1 + Math.log(1 + n.in.length) / 2);
-        return { n, s: weight * (0.5 + seeded(date + n.path)) };
-      })
-      .sort((a, b) => b.s - a.s);
+  if (!paths || paths.some((p) => !byPath.has(p) || snoozed(p, date))) {
+    const ranked = rankToday(date);
     const chosen = [];
-    for (const { n } of scored) {
+    for (const n of ranked) {
       if (chosen.length === 3) break;
-      if (chosen.some((c) => c.folder.split("/")[0] === n.folder.split("/")[0]) && scored.length > 12) continue;
+      if (chosen.some((c) => c.folder.split("/")[0] === n.folder.split("/")[0]) && ranked.length > 12) continue;
       chosen.push(n);
     }
     paths = chosen.map((n) => n.path);
     state.shown[date] = paths;
     saveState();
   }
-  return paths.map((p) => {
-    const n = byPath.get(p);
-    const opens = state.opened[p] || [];
-    const age = daysBetween(n.created, date);
-    const when = !n.dated ? "undated" : age === 0 ? "written today" : age === 1 ? "written yesterday" : `written ${age} days ago, on ${n.created}`;
-    const seen = opens.length ? `last opened ${opens.at(-1).slice(0, 10)}` : "never opened here";
-    return { ...brief(n), excerpt: n.excerpt, source: n.source, why: `${when} · ${seen} · ${n.in.length} note${n.in.length === 1 ? "" : "s"} point to it` };
-  });
+  return paths.map(describePick);
+}
+function describePick(p) {
+  const n = byPath.get(p);
+  const opens = state.opened[p] || [];
+  const age = daysBetween(n.created, today());
+  const when = !n.dated ? "undated" : age === 0 ? "written today" : age === 1 ? "written yesterday" : `written ${age} days ago, on ${n.created}`;
+  const seen = opens.length ? `last opened ${opens.at(-1).slice(0, 10)}` : "never opened here";
+  return { ...brief(n), excerpt: n.excerpt, source: n.source, why: `${when} · ${seen} · ${n.in.length} note${n.in.length === 1 ? "" : "s"} point to it` };
+}
+// "Not today": keeps a pick away for a week and puts the next best note in its place.
+function snoozePick(p) {
+  const date = today();
+  if (!byPath.has(p)) throw httpError(404, "No such note");
+  state.snoozed[p] = addDays(date, 7);
+  for (const [k, v] of Object.entries(state.snoozed)) if (v <= date) delete state.snoozed[k];
+  const paths = (state.shown[date] || []).filter((x) => x !== p);
+  const ranked = rankToday(date, new Set([...paths, p]));
+  const top = (n) => n.folder.split("/")[0];
+  const next = ranked.find((n) => ranked.length <= 12 || !paths.some((x) => top(byPath.get(x)) === top(n))) || ranked[0];
+  const i = (state.shown[date] || []).indexOf(p);
+  if (next) paths.splice(i < 0 ? paths.length : i, 0, next.path);
+  state.shown[date] = paths;
+  saveState();
+  return { until: state.snoozed[p], picks: paths.map(describePick) };
 }
 // What changed and what is waiting, worked out on this machine each time Today opens.
 function briefing() {
@@ -511,11 +540,12 @@ function renameNote(n, wanted) {
     if (o !== n) updated++;
   }
   fs.renameSync(oldFull, full);
-  if (state.opened[n.path]) {
-    state.opened[rel] = state.opened[n.path];
-    delete state.opened[n.path];
-    saveState();
+  for (const key of ["opened", "snoozed"]) {
+    if (!state[key][n.path]) continue;
+    state[key][rel] = state[key][n.path];
+    delete state[key][n.path];
   }
+  saveState();
   buildIndex();
   return { path: rel, updated };
 }
@@ -817,6 +847,7 @@ const routes = {
     return { path: rel };
   },
   "GET /api/today": () => ({ date: today(), picks: pickToday(), stats: stats(), briefing: briefing(), hasKey: Boolean(apiKey()) }),
+  "POST /api/snooze": (q, b) => snoozePick(b.path),
   "POST /api/daily": () => {
     const rel = `Daily/${today()}.md`;
     if (!byPath.has(rel)) writeNote(rel, `---\ntags: [daily]\ncreated: ${today()}\n---\n\n# ${today()}\n\n`);

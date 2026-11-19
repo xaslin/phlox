@@ -4,11 +4,12 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Next
 
-- [ ] **Snooze on Today.** "Not today" swaps a pick for another and keeps it away for a week.
 - [ ] **Graph filters.** Toggle folders on and off from the legend; drag a dot to pin it.
 - [ ] **Better "reads like".** Add two-word phrases to the similarity index and compare the Connect list before and after on the real vault.
 
 ## Done
+
+- [x] Snooze on Today: "Not today" on a pick swaps in the next best note in the same place and keeps the snoozed one off Today for a week; saved in `.ember/state.json` and carried over on rename (2026-11-19)
 
 - [x] Rename a note: Rename in the title bar renames the file, rewrites every `[[link]]` to it (aliases and headings kept) and its own `# heading` (2026-11-18)
 - [x] Templates: any note in a `Templates` folder is offered in the ⌘K palette as a starting point; `{{title}}`, `{{date}}` and `{{time}}` are filled in and the new note is dated today (2026-11-18)

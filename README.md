@@ -6,7 +6,7 @@ Local-first notes with a memory. Phlox reads a folder of Markdown files (an Obsi
 
 | Screen | What it does | Needs an API key |
 |---|---|---|
-| Today | A briefing: what changed in the last day, open tasks, link suggestions, conflicts. Three older notes worth another look, quick capture to `Inbox.md`, and a daily note. | No |
+| Today | A briefing: what changed in the last day, open tasks, link suggestions, conflicts. Three older notes worth another look ("Not today" swaps one out and keeps it away for a week), quick capture to `Inbox.md`, and a daily note. | No |
 | Tasks | Every unticked `- [ ]` checkbox across the folder. Ticking one rewrites that line in its note. | No |
 | Connect | Pairs of notes that read alike but do not link to each other. One click adds the link. | No |
 | Tensions | Passages that give different numbers for the same thing. | No |

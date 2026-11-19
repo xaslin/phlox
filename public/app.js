@@ -272,6 +272,29 @@ function wireDictation(input) {
   };
 }
 
+function pickEntries(picks) {
+  return picks.map((p) => `
+      <article class="entry">
+        <h3>${link(p)}</h3>
+        <div class="sub">${esc(p.why)}</div>
+        <p>${esc(p.excerpt)}</p>
+        <div class="row">${tags(p)}${p.source ? `<span class="tag plain">from ${esc(p.source.replace(/^https?:\/\/(www\.)?/, "").split("/")[0])}</span>` : ""}<span class="grow"></span>
+          <button class="btn" data-snooze="${esc(p.path)}" title="Hide this note from Today for a week">Not today</button></div>
+      </article>`).join("") || `<div class="empty">No notes yet. Point Phlox at a folder in Settings.</div>`;
+}
+// "Not today" swaps a pick for the next one and keeps it off Today for a week.
+function wireSnooze(d) {
+  $$("[data-snooze]", main).forEach((b) => (b.onclick = guard(async () => {
+    b.disabled = true;
+    const r = await api("/api/snooze", { body: { path: b.dataset.snooze } }).finally(() => (b.disabled = false));
+    const title = d.picks.find((p) => p.path === b.dataset.snooze)?.title || "Note";
+    d.picks = r.picks;
+    $("#picks").innerHTML = pickEntries(r.picks);
+    wireSnooze(d);
+    toast(`${title} is off Today until ${new Date(r.until + "T12:00").toLocaleDateString(undefined, { month: "long", day: "numeric" })}`);
+  })));
+}
+
 async function viewToday(live) {
   const [d, c, t] = await Promise.all([api("/api/today"), api("/api/connect"), api("/api/tensions")]);
   if (!live()) return;
@@ -290,13 +313,7 @@ async function viewToday(live) {
     <p class="lede" id="brief">${lines.join(" ")}</p>
     <form class="capture" id="capture"><input name="text" placeholder="Capture a thought. It goes to your Inbox." autocomplete="off" aria-label="Capture a thought">${micBtn}<button class="btn primary">Capture</button></form>
     <h2 class="sec">Worth another look <small>not opened in a while</small></h2>
-    ${d.picks.map((p) => `
-      <article class="entry">
-        <h3>${link(p)}</h3>
-        <div class="sub">${esc(p.why)}</div>
-        <p>${esc(p.excerpt)}</p>
-        <div class="row">${tags(p)}${p.source ? `<span class="tag plain">from ${esc(p.source.replace(/^https?:\/\/(www\.)?/, "").split("/")[0])}</span>` : ""}</div>
-      </article>`).join("") || `<div class="empty">No notes yet. Point Phlox at a folder in Settings.</div>`}
+    <div id="picks">${pickEntries(d.picks)}</div>
     ${b.changed.length ? `<h2 class="sec">Changed in the last day</h2>${noteRows(b.changed)}` : ""}
     ${b.missing.length ? `<h2 class="sec">Linked but not written yet</h2><div class="rows">${b.missing.map((m) => `<a href="#" data-create="${esc(m.title)}"><span>${esc(m.title)}</span><small>mentioned in ${m.from.map(esc).join(", ")}</small></a>`).join("")}</div>` : ""}
     ${d.stats.orphans.length ? `<h2 class="sec">Nothing links to these</h2>${noteRows(d.stats.orphans.slice(0, 10))}` : ""}
@@ -306,6 +323,7 @@ async function viewToday(live) {
     stat: `${d.stats.words.toLocaleString()} words · ${d.stats.unopened} never opened here`,
   });
   wireSpeak(() => `${nice}. ${$("#brief").textContent} Worth another look: ${d.picks.map((p) => p.title).join(", ")}.`);
+  wireSnooze(d);
   $("#daily").onclick = guard(async () => {
     const { path } = await api("/api/daily", { body: {} });
     await loadNotes();

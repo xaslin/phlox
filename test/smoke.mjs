@@ -119,6 +119,20 @@ async function run() {
   check("today is stable within a day", (await call("GET", "/api/today")).data.picks.map((p) => p.path).join() === first);
   check("today counts notes and links", r.data.stats.notes === 9 && !r.data.stats.orphans.some((o) => o.path.startsWith("Templates/")) && r.data.stats.links >= 3);
 
+  // snooze: "Not today" swaps the pick and keeps it away for a week
+  const gone = r.data.picks[1].path;
+  const kept = r.data.picks.filter((p) => p.path !== gone).map((p) => p.path);
+  r = await call("POST", "/api/snooze", { path: gone });
+  const after = (r.data?.picks || []).map((p) => p.path);
+  check("snooze swaps in another note", r.status === 200 && after.length === 3 && !after.includes(gone) && kept.every((p) => after.includes(p)), JSON.stringify(after));
+  check("snooze keeps the swapped note in place", after[1] !== gone && after[0] === kept[0]);
+  const week = new Date(Date.now() + 7 * 86400000).toLocaleDateString("en-CA");
+  check("snooze lasts a week", r.data?.until === week, r.data?.until);
+  check("snoozed note stays off Today", !(await call("GET", "/api/today")).data.picks.some((p) => p.path === gone));
+  const saved = JSON.parse(fs.readFileSync(path.join(vault, ".ember", "state.json"), "utf8"));
+  check("snooze is saved in the vault's state", saved.snoozed?.[gone] === week);
+  check("snooze refuses an unknown note", (await call("POST", "/api/snooze", { path: "Nope.md" })).status === 404);
+
   // connect and link
   r = await call("GET", "/api/connect");
   const pair = r.data.pairs.find((p) => [p.a.title, p.b.title].sort().join() === "Bike Tour,Packing List");
