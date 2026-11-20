@@ -191,7 +191,14 @@ mark { background: rgba(164, 139, 245, .28); color: inherit; border-radius: 2px;
 /* other screens */
 .graphbox { border: 1px solid var(--line); border-radius: 6px; background: #0b0b0c; overflow: hidden; }
 #graph { display: block; width: 100%; height: calc(100vh - 250px); min-height: 360px; cursor: grab; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0; color: var(--muted); font-size: 12.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px 6px; margin: 10px 0; color: var(--muted); font-size: 12.5px; }
+.legend .lg { display: inline-flex; align-items: center; border: 1px solid transparent; background: none; color: var(--muted); font-size: 12.5px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+.legend .lg:hover { background: var(--hover); color: var(--text); }
+.legend .lg small { color: var(--faint); margin-left: 5px; }
+.legend .lg.off { color: var(--faint); text-decoration: line-through; }
+.legend .lg.off i { background: transparent !important; box-shadow: inset 0 0 0 1px var(--faint); }
+.legend .unpin { margin-left: auto; border-color: var(--line); }
+.legend .lg[hidden] { display: none; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .askbox { display: flex; gap: 8px; margin-bottom: 18px; align-items: flex-start; }
 .askbox textarea { resize: none; height: 36px; }

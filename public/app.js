@@ -761,20 +761,42 @@ async function viewSettings(live) {
 
 // ───────────── graph ─────────────
 let stopGraph = () => {};
+// Hidden folders and pinned dots are kept in this browser only, so the graph looks the same next time.
+function graphPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem("ember-graph") || "{}");
+    return { hidden: Array.isArray(p.hidden) ? p.hidden : [], pins: p.pins && typeof p.pins === "object" ? p.pins : {} };
+  } catch {
+    return { hidden: [], pins: {} };
+  }
+}
+function saveGraphPrefs(p) {
+  try {
+    localStorage.setItem("ember-graph", JSON.stringify(p));
+  } catch {}
+}
 async function viewGraph(live) {
   const g = await api("/api/graph");
   if (!live()) return;
   const groups = [...new Set(g.nodes.map((n) => n.group))].sort();
   const palette = ["#a78bfa", "#60a5fa", "#34d399", "#f472b6", "#fbbf24", "#22d3ee", "#fb7185", "#94a3b8", "#c084fc"];
   const color = Object.fromEntries(groups.map((k, i) => [k, palette[i % palette.length]]));
+  const prefs = graphPrefs();
+  const hidden = new Set(prefs.hidden.filter((k) => groups.includes(k)));
+  const count = Object.fromEntries(groups.map((k) => [k, g.nodes.filter((n) => n.group === k).length]));
   page(`
     <div class="graphbox"><canvas id="graph"></canvas></div>
-    <div class="legend">${groups.map((k) => `<span><i style="background:${color[k]};color:${color[k]}"></i>${esc(k.replace(/^\d+\s+/, ""))}</span>`).join("")}</div>`, { cls: "wide", title: "<b>Graph</b>", stat: "Drag to move · scroll to zoom · click a dot to open it" });
+    <div class="legend">${groups.map((k) => `<button class="lg${hidden.has(k) ? " off" : ""}" data-g="${esc(k)}" aria-pressed="${!hidden.has(k)}" title="Show or hide this folder"><i style="background:${color[k]}"></i>${esc(k.replace(/^\d+\s+/, ""))} <small>${count[k]}</small></button>`).join("")}<button class="lg unpin" hidden>Unpin all</button></div>`, { cls: "wide", title: "<b>Graph</b>", stat: "Drag the background to move · drag a dot to pin it · shift-click to unpin · click a folder to hide it" });
   const cv = $("#graph");
   const ctx = cv.getContext("2d");
   const css = getComputedStyle(document.documentElement);
   const ink = css.getPropertyValue("--text").trim(), line = css.getPropertyValue("--line-2").trim();
-  const nodes = g.nodes.map((n, i) => ({ ...n, x: Math.cos(i * 2.4) * (120 + i * 3), y: Math.sin(i * 2.4) * (120 + i * 3), vx: 0, vy: 0 }));
+  const nodes = g.nodes.map((n, i) => {
+    const pin = prefs.pins[n.id];
+    const at = Array.isArray(pin) && pin.every(Number.isFinite) ? pin : null;
+    return { ...n, x: at ? at[0] : Math.cos(i * 2.4) * (120 + i * 3), y: at ? at[1] : Math.sin(i * 2.4) * (120 + i * 3), vx: 0, vy: 0, pinned: Boolean(at) };
+  });
+  const shown = (n) => !hidden.has(n.group);
   const idx = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
   const edges = g.edges.map(([a, b]) => [idx[a], idx[b]]).filter(([a, b]) => a !== undefined && b !== undefined);
   let view = { x: 0, y: 0, k: 0.6 }, hover = null, drag = null, heat = 1, alive = true;
@@ -789,11 +811,19 @@ async function viewGraph(live) {
     return [(e.clientX - r.left - r.width / 2 - view.x) / view.k, (e.clientY - r.top - r.height / 2 - view.y) / view.k];
   };
   const radius = (n) => 3 + Math.sqrt(n.degree) * 1.5;
+  const savePins = () => {
+    prefs.pins = Object.fromEntries(nodes.filter((n) => n.pinned).map((n) => [n.id, [Math.round(n.x), Math.round(n.y)]]));
+    prefs.hidden = [...hidden];
+    saveGraphPrefs(prefs);
+    $(".legend .unpin").hidden = !nodes.some((n) => n.pinned);
+  };
   function step() {
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i];
+      if (!shown(a)) continue;
       for (let j = i + 1; j < nodes.length; j++) {
         const b = nodes[j];
+        if (!shown(b)) continue;
         let dx = a.x - b.x, dy = a.y - b.y;
         const d2 = dx * dx + dy * dy + 0.01, f = 4200 / d2, d = Math.sqrt(d2);
         dx = (dx / d) * f; dy = (dy / d) * f;
@@ -803,10 +833,12 @@ async function viewGraph(live) {
     }
     for (const [i, j] of edges) {
       const a = nodes[i], b = nodes[j];
+      if (!shown(a) || !shown(b)) continue;
       const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1, f = (d - 95) * 0.012;
       a.vx += (dx / d) * f; a.vy += (dy / d) * f; b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
     }
     for (const n of nodes) {
+      if (n.pinned || !shown(n)) { n.vx = n.vy = 0; continue; }
       n.vx *= 0.82; n.vy *= 0.82;
       n.x += Math.max(-12, Math.min(12, n.vx)) * heat;
       n.y += Math.max(-12, Math.min(12, n.vy)) * heat;
@@ -825,18 +857,25 @@ async function viewGraph(live) {
     if (hover !== null) for (const [i, j] of edges) { if (i === hover) near.add(j); if (j === hover) near.add(i); }
     ctx.lineWidth = 1 / view.k;
     for (const [i, j] of edges) {
+      if (!shown(nodes[i]) || !shown(nodes[j])) continue;
       const lit = hover !== null && (i === hover || j === hover);
       ctx.strokeStyle = lit ? color[nodes[hover].group] : line;
       ctx.globalAlpha = hover === null ? 0.9 : lit ? 1 : 0.2;
       ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[j].x, nodes[j].y); ctx.stroke();
     }
     nodes.forEach((n, i) => {
+      if (!shown(n)) return;
       const lit = hover === null || i === hover || near.has(i);
       ctx.globalAlpha = lit ? 1 : 0.25;
       ctx.fillStyle = color[n.group];
       ctx.shadowColor = color[n.group]; ctx.shadowBlur = i === hover ? 10 : 0;
       ctx.beginPath(); ctx.arc(n.x, n.y, radius(n), 0, 6.3); ctx.fill();
       ctx.shadowBlur = 0;
+      if (n.pinned) {
+        ctx.strokeStyle = ink; ctx.lineWidth = 1.2 / view.k;
+        ctx.beginPath(); ctx.arc(n.x, n.y, radius(n) + 2.5 / view.k, 0, 6.3); ctx.stroke();
+        ctx.lineWidth = 1 / view.k;
+      }
       if (i === hover || (hover !== null && near.has(i)) || (hover === null && n.degree >= 14 && view.k > 0.45)) {
         ctx.fillStyle = ink;
         ctx.font = `${(i === hover ? 13 : 11) / view.k}px -apple-system, sans-serif`;
@@ -849,21 +888,51 @@ async function viewGraph(live) {
   const pick = (e) => {
     const [x, y] = toWorld(e);
     let best = null, bd = 14 / view.k;
-    nodes.forEach((n, i) => { const d = Math.hypot(n.x - x, n.y - y) - radius(n); if (d < bd) { bd = d; best = i; } });
+    nodes.forEach((n, i) => { if (!shown(n)) return; const d = Math.hypot(n.x - x, n.y - y) - radius(n); if (d < bd) { bd = d; best = i; } });
     return best;
   };
   cv.onmousemove = (e) => {
+    if (drag && drag.node !== null) {
+      const n = nodes[drag.node];
+      [n.x, n.y] = toWorld(e);
+      n.pinned = true; drag.moved = true; heat = Math.max(heat, 0.3);
+      return;
+    }
     if (drag) { view.x += e.movementX; view.y += e.movementY; drag.moved = true; return; }
     hover = pick(e);
     cv.style.cursor = hover !== null ? "pointer" : "grab";
   };
-  cv.onmousedown = () => (drag = { moved: false });
-  cv.onmouseleave = () => { drag = null; hover = null; };
+  cv.onmousedown = (e) => (drag = { moved: false, node: e.shiftKey ? null : pick(e) });
+  cv.onmouseleave = () => {
+    if (drag && drag.node !== null && drag.moved) savePins();
+    drag = null; hover = null;
+  };
   cv.onmouseup = (e) => {
     const was = drag; drag = null;
     const hit = pick(e);
-    if (was && !was.moved && hit !== null) location.hash = href(nodes[hit].id);
+    if (was && was.node !== null && was.moved) return savePins();
+    if (!was || was.moved || hit === null) return;
+    if (e.shiftKey) {
+      if (nodes[hit].pinned) { nodes[hit].pinned = false; heat = Math.max(heat, 0.3); savePins(); }
+      return;
+    }
+    location.hash = href(nodes[hit].id);
   };
+  for (const b of document.querySelectorAll(".legend .lg[data-g]")) b.onclick = () => {
+    const k = b.dataset.g;
+    hidden.has(k) ? hidden.delete(k) : hidden.add(k);
+    b.classList.toggle("off", hidden.has(k));
+    b.setAttribute("aria-pressed", String(!hidden.has(k)));
+    if (hover !== null && !shown(nodes[hover])) hover = null;
+    heat = Math.max(heat, 0.5);
+    savePins();
+  };
+  $(".legend .unpin").onclick = () => {
+    for (const n of nodes) n.pinned = false;
+    heat = Math.max(heat, 0.5);
+    savePins();
+  };
+  $(".legend .unpin").hidden = !nodes.some((n) => n.pinned);
   cv.onwheel = (e) => { e.preventDefault(); view.k = Math.max(0.2, Math.min(3, view.k * (e.deltaY < 0 ? 1.1 : 0.9))); };
   for (let i = 0; i < 220; i++) step();
   stopGraph = () => (alive = false);

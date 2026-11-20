@@ -239,6 +239,11 @@ async function run() {
   const ids = new Set(r.data.nodes.map((n) => n.id));
   check("graph has a node per note", r.data.nodes.length === (await call("GET", "/api/notes")).data.notes.length);
   check("graph edges point at real nodes", r.data.edges.length > 0 && r.data.edges.every(([a, b]) => ids.has(a) && ids.has(b)));
+  // the legend hides folders by the top-level group, so each node's group must be its first folder
+  const groupOf = Object.fromEntries(r.data.nodes.map((n) => [n.id, n.group]));
+  check("graph groups notes by top folder", groupOf["Cooking/Sourdough.md"] === "Cooking" && groupOf["Trips/Bike Tour.md"] === "Trips" && groupOf["Home.md"] === "Home", JSON.stringify(groupOf));
+  const graphJs = await (await fetch(BASE + "/app.js")).text();
+  check("graph legend toggles folders and pins dots", /class="lg/.test(graphJs) && /Unpin all/.test(graphJs) && /ember-graph/.test(graphJs));
 
   // staying inside the folder and on this machine
   check("cannot edit outside the vault", (await call("PUT", "/api/note", { path: "../secret.md", raw: "changed" })).status === 404);
