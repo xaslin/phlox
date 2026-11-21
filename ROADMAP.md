@@ -4,10 +4,10 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Next
 
-- [ ] **Better "reads like".** Add two-word phrases to the similarity index and compare the Connect list before and after on the real vault.
 
 ## Done
 
+- [x] Better "reads like": two words that sit side by side ("river trail") count as a phrase in the similarity index, and Connect names shared phrases instead of their single words. On the vault the top pairs barely moved but the reasons read better; one good pair slipped just below the cut-off, and halving the phrase weight brought it back but hid the phrases again (2026-11-21)
 - [x] Graph filters: click a folder in the legend to hide or show it; drag a dot to pin it where you drop it, shift-click to unpin, "Unpin all" clears them; remembered in the browser (2026-11-20)
 - [x] Snooze on Today: "Not today" on a pick swaps in the next best note in the same place and keeps the snoozed one off Today for a week; saved in `.ember/state.json` and carried over on rename (2026-11-19)
 

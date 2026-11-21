@@ -67,6 +67,26 @@ function tokens(text) {
   }
   return out;
 }
+// Two words side by side ("spaced repetition"), as "spac repetition". A stop word, a number or
+// punctuation between them breaks the pair, so only words that really sit together count.
+function phrases(text) {
+  const out = [];
+  for (const part of text.toLowerCase().split(/[.,;:!?()[\]{}"“”|/\\\n]+/)) {
+    let prev = null;
+    for (const raw of part.split(/\s+/)) {
+      const w = raw.replace(/^[^a-z0-9]+|[^a-z0-9']+$/g, "");
+      if (!/^[a-z][a-z0-9']{1,}$/.test(w) || STOP.has(w)) {
+        prev = null;
+        continue;
+      }
+      const t = stem(w);
+      if (prev && prev !== t) out.push(prev + " " + t);
+      prev = t;
+    }
+  }
+  return out;
+}
+const isPhrase = (t) => t.includes(" ");
 function parseFrontmatter(raw) {
   const fm = {};
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
@@ -150,6 +170,8 @@ function buildIndex() {
     const add = (t, w) => tf.set(t, (tf.get(t) || 0) + w);
     tokens(title).forEach((t) => add(t, 4));
     tokens(plain(body)).forEach((t) => add(t, 1));
+    phrases(title).forEach((t) => add(t, 4));
+    for (const line of body.split("\n")) phrases(plain(line)).forEach((t) => add(t, 1));
     const lineOffset = raw.split("\n").length - body.split("\n").length;
     const tasks = [];
     body.split("\n").forEach((line, i) => {
@@ -197,6 +219,7 @@ function buildIndex() {
     n.vec = new Map();
     let norm = 0;
     for (const [t, f] of n.tf) {
+      if (isPhrase(t) && df.get(t) < 2) continue; // a pair no other note has would only dilute the rest
       const w = (1 + Math.log(f)) * idf.get(t);
       n.vec.set(t, w);
       norm += w * w;
@@ -394,6 +417,18 @@ function stats() {
 }
 
 // ───────────── connect: alike but unlinked ─────────────
+// The words and phrases two notes share, strongest first. A word already inside a listed phrase is left out.
+function sharedTerms(a, b, k = 5) {
+  const ranked = [...a.vec.keys()]
+    .filter((t) => b.vec.has(t))
+    .map((t) => ({ t, w: a.vec.get(t) * b.vec.get(t) }))
+    .sort((x, y) => y.w - x.w);
+  const inPhrase = new Set(ranked.filter((x) => isPhrase(x.t)).slice(0, k).flatMap((x) => x.t.split(" ")));
+  return ranked
+    .filter((x) => isPhrase(x.t) || !inPhrase.has(x.t))
+    .slice(0, k)
+    .map((x) => x.t);
+}
 function suggestions(k = 14) {
   const pool = notes.filter((n) => !isHub(n));
   const pairs = [];
@@ -403,12 +438,7 @@ function suggestions(k = 14) {
       if (isLinked(a, b)) continue;
       const s = cosine(a, b);
       if (s < 0.1) continue;
-      const shared = [...a.vec.keys()]
-        .filter((t) => b.vec.has(t))
-        .map((t) => ({ t, w: a.vec.get(t) * b.vec.get(t) }))
-        .sort((x, y) => y.w - x.w)
-        .slice(0, 5)
-        .map((x) => x.t);
+      const shared = sharedTerms(a, b);
       const id = "c:" + [a.path, b.path].join("|");
       if (!state.dismissed.includes(id)) pairs.push({ id, a: brief(a), b: brief(b), score: +s.toFixed(3), shared });
     }

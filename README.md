@@ -8,7 +8,7 @@ Local-first notes with a memory. Phlox reads a folder of Markdown files (an Obsi
 |---|---|---|
 | Today | A briefing: what changed in the last day, open tasks, link suggestions, conflicts. Three older notes worth another look ("Not today" swaps one out and keeps it away for a week), quick capture to `Inbox.md`, and a daily note. | No |
 | Tasks | Every unticked `- [ ]` checkbox across the folder. Ticking one rewrites that line in its note. | No |
-| Connect | Pairs of notes that read alike but do not link to each other. One click adds the link. | No |
+| Connect | Pairs of notes that read alike but do not link to each other, with the words and two-word phrases they share. One click adds the link. | No |
 | Tensions | Passages that give different numbers for the same thing. | No |
 | Tensions, deeper read | Disagreements that are not about numbers. | Yes |
 | Graph | Every note and link. Click a folder in the legend to hide it; drag a dot to pin it (shift-click to let it go). Both are remembered in this browser. | No |

@@ -137,6 +137,8 @@ async function run() {
   r = await call("GET", "/api/connect");
   const pair = r.data.pairs.find((p) => [p.a.title, p.b.title].sort().join() === "Bike Tour,Packing List");
   check("connect suggests an unlinked pair", Boolean(pair), JSON.stringify(r.data.pairs.map((p) => [p.a.title, p.b.title])));
+  check("connect names a shared two-word phrase", pair?.shared.includes("river trail"), JSON.stringify(pair?.shared));
+  check("a word inside a shared phrase is not listed twice", pair && !pair.shared.includes("river") && !pair.shared.includes("trail"), JSON.stringify(pair?.shared));
   if (pair) {
     r = await call("POST", "/api/link", { from: pair.a.path, to: pair.b.path });
     check("link adds a See also line", r.status === 200 && read(pair.a.path).includes(`See also: [[${pair.b.title}]]`));
