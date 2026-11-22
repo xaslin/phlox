@@ -152,6 +152,12 @@ function walk(dir, out = []) {
 }
 
 const TASK = /^(\s*(?:[-*+]|\d+\.)\s+)\[( |x|X)\]\s+(.*)$/;
+// A due date written as 📅 2026-12-01, due: 2026-12-01, [due:: 2026-12-01] or (due 2026-12-01).
+const DUE = /(?:📅|\bdue\b)[\s:]*(\d{4}-\d{2}-\d{2})/i;
+function dueDate(text) {
+  const m = text.match(DUE);
+  return m && !isNaN(new Date(m[1])) ? m[1] : "";
+}
 let version = 0; // goes up every time the folder is re-read, so the page can tell when to refresh
 function buildIndex() {
   version++;
@@ -176,7 +182,7 @@ function buildIndex() {
     const tasks = [];
     body.split("\n").forEach((line, i) => {
       const m = line.match(TASK);
-      if (m) tasks.push({ line: lineOffset + i, done: m[2] !== " ", text: plain(m[3]) });
+      if (m) tasks.push({ line: lineOffset + i, done: m[2] !== " ", text: plain(m[3]), due: dueDate(m[3]) });
     });
     const n = {
       path: rel,
@@ -318,6 +324,13 @@ function seeded(str) {
 function daysBetween(a, b) {
   return Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 }
+// Open tasks with a due date, soonest first. `days` is how far off: negative once overdue.
+function dueTasks() {
+  const now = today();
+  return notes
+    .flatMap((n) => n.tasks.filter((t) => !t.done && t.due).map((t) => ({ ...brief(n), line: t.line, text: t.text, due: t.due, days: Math.round((new Date(t.due) - new Date(now)) / 86400000) })))
+    .sort((a, b) => a.due.localeCompare(b.due) || a.title.localeCompare(b.title));
+}
 function addDays(date, days) {
   const d = new Date(date + "T12:00");
   d.setDate(d.getDate() + days);
@@ -401,6 +414,8 @@ function briefing() {
     changed: changed.slice(0, 8).map(brief),
     changedCount: changed.length,
     openTasks: notes.reduce((a, n) => a + n.tasks.filter((t) => !t.done).length, 0),
+    overdue: dueTasks().filter((t) => t.days < 0).length,
+    dueSoon: dueTasks().filter((t) => t.days >= 0 && t.days <= 7).length,
     missing: [...missing].sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([title, from]) => ({ title, from: [...new Set(from)].slice(0, 3) })),
     streak,
   };
@@ -888,7 +903,7 @@ const routes = {
       .filter((n) => n.tasks.some((t) => !t.done))
       .sort((a, b) => b.mtime - a.mtime)
       .map((n) => ({ ...brief(n), tasks: n.tasks.filter((t) => !t.done) }));
-    return { groups, open: groups.reduce((a, g) => a + g.tasks.length, 0), done: notes.reduce((a, n) => a + n.tasks.filter((t) => t.done).length, 0) };
+    return { groups, due: dueTasks(), open: groups.reduce((a, g) => a + g.tasks.length, 0), done: notes.reduce((a, n) => a + n.tasks.filter((t) => t.done).length, 0) };
   },
   // Ticks or unticks one checkbox by rewriting that one line.
   "POST /api/task": (q, b) => {

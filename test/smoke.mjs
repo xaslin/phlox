@@ -203,6 +203,17 @@ async function run() {
   check("ticked task leaves the list", (await call("GET", "/api/tasks")).data.open === 0);
   check("ticking a line that is not a task is refused", (await call("POST", "/api/task", { path: group.path, line: 0, done: true })).status === 409);
 
+  // due dates
+  const soon = new Date(Date.now() + 3 * 86400000).toLocaleDateString("en-CA");
+  const past = new Date(Date.now() - 2 * 86400000).toLocaleDateString("en-CA");
+  const plans = (await call("POST", "/api/note", { title: "Plans" })).data.path;
+  await call("PUT", "/api/note", { path: plans, raw: `# Plans\n\n- [ ] Later thing due: ${soon}\n- [ ] Old thing 📅 ${past}\n- [ ] No date here\n- [ ] Bad date due: 2026-13-45\n` });
+  r = await call("GET", "/api/tasks");
+  check("tasks with due dates come back soonest first", r.data.due.length === 2 && r.data.due[0].days === -2 && r.data.due[1].days === 3 && r.data.due[0].text.includes("Old thing"), JSON.stringify(r.data.due));
+  check("open count still includes undated tasks", r.data.open === 4);
+  r = await call("GET", "/api/today");
+  check("briefing counts overdue and due-soon tasks", r.data.briefing.overdue === 1 && r.data.briefing.dueSoon === 1, JSON.stringify(r.data.briefing));
+
   // mentions, two hops, briefing, daily note
   r = await note("Cooking/Starter Care.md");
   check("finds unlinked mentions", r.data.mentions.some((m) => m.title === "Rye Loaf") === false && Array.isArray(r.data.mentions));

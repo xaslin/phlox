@@ -303,7 +303,7 @@ async function viewToday(live) {
   // The briefing is one plain sentence per thing that is waiting, each linking to where you deal with it.
   const lines = [
     b.changedCount ? `${plural(b.changedCount, "note")} changed in the last day.` : "Nothing has changed since yesterday.",
-    b.openTasks ? `<a href="#/tasks">${plural(b.openTasks, "open task")}</a>.` : "",
+    b.openTasks ? `<a href="#/tasks">${plural(b.openTasks, "open task")}</a>${b.overdue || b.dueSoon ? ` (${[b.overdue && `${b.overdue} overdue`, b.dueSoon && `${b.dueSoon} due this week`].filter(Boolean).join(", ")})` : ""}.` : "",
     c.pairs.length ? `<a href="#/connect">${plural(c.pairs.length, "pair")} of notes</a> could be linked.` : "",
     t.tensions.length ? `<a href="#/tensions">${plural(t.tensions.length, "place")}</a> where your notes disagree.` : "",
     b.streak > 1 ? `Day ${b.streak} in a row.` : "",
@@ -350,12 +350,18 @@ function wireCreate() {
   })));
 }
 
+function dueWords(days) {
+  if (days < -1) return `${-days} days overdue`;
+  return days === -1 ? "1 day overdue" : days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due in ${days} days`;
+}
 async function viewTasks(live) {
   const d = await api("/api/tasks");
   if (!live()) return;
   page(`
     <h1 class="page">Tasks</h1>
-    <p class="lede">Every unticked checkbox in your notes, most recently edited note first. Write <code>- [ ] something</code> in any note to add one.</p>
+    <p class="lede">Every unticked checkbox in your notes, most recently edited note first. Write <code>- [ ] something</code> in any note to add one, and add <code>due: 2026-12-01</code> to give it a date.</p>
+    ${d.due.length ? `<h2 class="sec">Due <small>${plural(d.due.filter((t) => t.days < 0).length, "overdue task")}</small></h2>
+      <div class="tasks">${d.due.map((t) => `<label><input type="checkbox" data-path="${esc(t.path)}" data-line="${t.line}"><span>${esc(t.text)}</span> <small class="due${t.days < 0 ? " late" : ""}">${esc(dueWords(t.days))} · ${esc(t.title)}</small></label>`).join("")}</div>` : ""}
     ${d.groups.map((g) => `
       <h2 class="sec">${link(g)} <small>${esc(folderName(g.folder))}</small></h2>
       <div class="tasks">${g.tasks.map((t) => `<label><input type="checkbox" data-path="${esc(g.path)}" data-line="${t.line}"><span>${esc(t.text)}</span></label>`).join("")}</div>`).join("") || `<div class="empty">Nothing is waiting.</div>`}
