@@ -4,13 +4,13 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Next
 
-- [ ] Stale projects: list notes tagged `project` that have not been edited in 30 days on Today, with a "still going?" link
 - [ ] Add a task from the Tasks screen: a box that appends `- [ ] …` (with an optional date) to a chosen note, defaulting to Inbox
 - [ ] Study sessions: a Review screen that quizzes from `Q:`/`A:` lines in notes and remembers which ones were missed
 
 
 ## Done
 
+- [x] Stale projects: Today lists notes tagged `project` not edited in 30 days (oldest first, up to six) under "Still going?", each linking to the note; a `done`, `archived` or `finished` tag keeps a project off the list (2026-11-23)
 - [x] Due dates on tasks: write `due: 2026-12-01`, `📅 2026-12-01` or `(due 2026-12-01)` in a task; Tasks lists dated ones first (overdue marked in violet) and the Today briefing counts overdue and due-this-week (2026-11-22)
 - [x] Better "reads like": two words that sit side by side ("river trail") count as a phrase in the similarity index, and Connect names shared phrases instead of their single words. On the vault the top pairs barely moved but the reasons read better; one good pair slipped just below the cut-off, and halving the phrase weight brought it back but hid the phrases again (2026-11-21)
 - [x] Graph filters: click a folder in the legend to hide or show it; drag a dot to pin it where you drop it, shift-click to unpin, "Unpin all" clears them; remembered in the browser (2026-11-20)

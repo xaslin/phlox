@@ -396,6 +396,14 @@ function snoozePick(p) {
   saveState();
   return { until: state.snoozed[p], picks: paths.map(describePick) };
 }
+// Notes tagged `project` that nobody has touched in a month, oldest first. Finished ones can say so with a `done` tag.
+function staleProjects(days = 30) {
+  const cutoff = Date.now() - days * 86400000;
+  return notes
+    .filter((n) => n.tags.includes("project") && !n.tags.some((t) => ["done", "archived", "finished"].includes(t)) && !isTemplate(n) && n.mtime < cutoff)
+    .sort((a, b) => a.mtime - b.mtime)
+    .map((n) => ({ ...brief(n), days: Math.floor((Date.now() - n.mtime) / 86400000) }));
+}
 // What changed and what is waiting, worked out on this machine each time Today opens.
 function briefing() {
   const now = Date.now();
@@ -417,6 +425,7 @@ function briefing() {
     overdue: dueTasks().filter((t) => t.days < 0).length,
     dueSoon: dueTasks().filter((t) => t.days >= 0 && t.days <= 7).length,
     missing: [...missing].sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([title, from]) => ({ title, from: [...new Set(from)].slice(0, 3) })),
+    stale: staleProjects().slice(0, 6),
     streak,
   };
 }

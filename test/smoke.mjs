@@ -221,6 +221,17 @@ async function run() {
   await new Promise((res) => setTimeout(res, 700));
   r = await note("Cooking/Starter Care.md");
   check("picks up an edit made outside the app", r.data.mentions.some((m) => m.title === "Rye Loaf"), JSON.stringify(r.data.mentions));
+  // stale projects
+  const oldP = (await call("POST", "/api/note", { title: "Old Venture" })).data.path;
+  await call("PUT", "/api/note", { path: oldP, raw: "---\ntags: [project]\n---\n\n# Old Venture\n\nA made-up project.\n" });
+  const doneP = (await call("POST", "/api/note", { title: "Finished Venture" })).data.path;
+  await call("PUT", "/api/note", { path: doneP, raw: "---\ntags: [project, done]\n---\n\n# Finished Venture\n" });
+  const longAgo = new Date(Date.now() - 45 * 86400000);
+  for (const p of [oldP, doneP]) fs.utimesSync(path.join(vault, p), longAgo, longAgo);
+  await call("POST", "/api/reindex", {});
+  r = await call("GET", "/api/today");
+  check("stale projects list old project notes only", r.data.briefing.stale.length === 1 && r.data.briefing.stale[0].title === "Old Venture" && r.data.briefing.stale[0].days >= 45, JSON.stringify(r.data.briefing.stale));
+
   r = await call("POST", "/api/mention", { from: "Cooking/Rye Loaf.md", to: "Cooking/Starter Care.md" });
   check("linking a mention keeps the wording", r.status === 200 && read("Cooking/Rye Loaf.md").includes("Good [[Starter Care|starter care]] matters"), read("Cooking/Rye Loaf.md"));
   r = await note("Home.md");

@@ -315,6 +315,7 @@ async function viewToday(live) {
     <h2 class="sec">Worth another look <small>not opened in a while</small></h2>
     <div id="picks">${pickEntries(d.picks)}</div>
     ${b.changed.length ? `<h2 class="sec">Changed in the last day</h2>${noteRows(b.changed)}` : ""}
+    ${b.stale.length ? `<h2 class="sec">Still going? <small>projects not edited in 30 days</small></h2><div class="rows">${b.stale.map((p) => `<a href="${href(p.path)}"><span>${esc(p.title)}</span><small>${p.days} days since the last edit · still going?</small></a>`).join("")}</div>` : ""}
     ${b.missing.length ? `<h2 class="sec">Linked but not written yet</h2><div class="rows">${b.missing.map((m) => `<a href="#" data-create="${esc(m.title)}"><span>${esc(m.title)}</span><small>mentioned in ${m.from.map(esc).join(", ")}</small></a>`).join("")}</div>` : ""}
     ${d.stats.orphans.length ? `<h2 class="sec">Nothing links to these</h2>${noteRows(d.stats.orphans.slice(0, 10))}` : ""}
   `, {
