@@ -924,6 +924,20 @@ const routes = {
     writeNote(n.path, lines.join("\n"));
     return { ok: true };
   },
+  // Adds `- [ ] text` (with an optional due date) at the end of a note; Inbox when none is named.
+  "POST /api/addtask": (q, b) => {
+    const text = String(b.text || "").replace(/\s+/g, " ").trim();
+    if (!text) throw httpError(400, "Write the task first");
+    const due = String(b.due || "").trim();
+    if (due && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || isNaN(new Date(due)))) throw httpError(400, "The date should look like 2026-12-01");
+    const target = b.path ? byPath.get(b.path) : byTitle.get("inbox");
+    if (b.path && !target) throw httpError(404, "No such note");
+    const rel = target ? target.path : "Inbox.md";
+    const raw = target ? target.raw : `---\ntags: [inbox]\n---\n\n# Inbox\n`;
+    const line = `- [ ] ${text}${due && !DUE.test(text) ? ` due: ${due}` : ""}`;
+    writeNote(rel, raw.trimEnd() + "\n" + (TASK.test(raw.trimEnd().split("\n").at(-1)) ? "" : "\n") + line + "\n");
+    return { path: rel };
+  },
   // Turns the first plain mention of a note's title into a link to it.
   "POST /api/mention": (q, b) => {
     const from = byPath.get(b.from), to = byPath.get(b.to);

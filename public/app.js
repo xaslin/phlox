@@ -361,12 +361,26 @@ async function viewTasks(live) {
   page(`
     <h1 class="page">Tasks</h1>
     <p class="lede">Every unticked checkbox in your notes, most recently edited note first. Write <code>- [ ] something</code> in any note to add one, and add <code>due: 2026-12-01</code> to give it a date.</p>
+    <form class="capture" id="addtask"><input name="text" placeholder="Add a task" autocomplete="off" aria-label="New task"><input name="due" type="date" aria-label="Due date" title="Due date (optional)"><input name="note" list="tasknotes" placeholder="Inbox" autocomplete="off" aria-label="Note to add it to" title="Which note (default Inbox)"><datalist id="tasknotes">${notes.map((n) => `<option value="${esc(n.title)}">`).join("")}</datalist><button class="btn primary">Add</button></form>
     ${d.due.length ? `<h2 class="sec">Due <small>${plural(d.due.filter((t) => t.days < 0).length, "overdue task")}</small></h2>
       <div class="tasks">${d.due.map((t) => `<label><input type="checkbox" data-path="${esc(t.path)}" data-line="${t.line}"><span>${esc(t.text)}</span> <small class="due${t.days < 0 ? " late" : ""}">${esc(dueWords(t.days))} · ${esc(t.title)}</small></label>`).join("")}</div>` : ""}
     ${d.groups.map((g) => `
       <h2 class="sec">${link(g)} <small>${esc(folderName(g.folder))}</small></h2>
       <div class="tasks">${g.tasks.map((t) => `<label><input type="checkbox" data-path="${esc(g.path)}" data-line="${t.line}"><span>${esc(t.text)}</span></label>`).join("")}</div>`).join("") || `<div class="empty">Nothing is waiting.</div>`}
   `, { title: "<b>Tasks</b>", stat: `${d.open} open · ${d.done} done` });
+  $("#addtask").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, title = f.note.value.trim().toLowerCase();
+    const target = title && notes.find((n) => n.title.toLowerCase() === title);
+    if (title && !target) return toast("No note with that name");
+    try {
+      await api("/api/addtask", { body: { text: f.text.value, due: f.due.value, path: target ? target.path : undefined } });
+      await loadNotes();
+      viewTasks(() => true);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
   $$(".tasks input", main).forEach((box) => (box.onchange = async () => {
     try {
       await api("/api/task", { body: { path: box.dataset.path, line: +box.dataset.line, done: box.checked } });

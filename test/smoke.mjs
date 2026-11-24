@@ -213,6 +213,13 @@ async function run() {
   check("open count still includes undated tasks", r.data.open === 4);
   r = await call("GET", "/api/today");
   check("briefing counts overdue and due-soon tasks", r.data.briefing.overdue === 1 && r.data.briefing.dueSoon === 1, JSON.stringify(r.data.briefing));
+  // adding tasks
+  r = await call("POST", "/api/addtask", { text: "Pack the camera", due: "2026-12-05" });
+  check("add task creates or extends the Inbox", r.status === 200 && read(r.data.path).includes("- [ ] Pack the camera due: 2026-12-05"), JSON.stringify(r));
+  r = await call("POST", "/api/addtask", { text: "Second thing", path: "Cooking/Sourdough.md" });
+  check("add task to a chosen note appends a checkbox line", r.status === 200 && read("Cooking/Sourdough.md").trimEnd().endsWith("- [ ] Second thing"));
+  check("added tasks show in the list", (await call("GET", "/api/tasks")).data.groups.some((g) => g.tasks.some((t) => t.text.startsWith("Second thing"))));
+  check("add task refuses empty text, bad dates and unknown notes", (await call("POST", "/api/addtask", { text: " " })).status === 400 && (await call("POST", "/api/addtask", { text: "x", due: "soon" })).status === 400 && (await call("POST", "/api/addtask", { text: "x", path: "Nope.md" })).status === 404);
 
   // mentions, two hops, briefing, daily note
   r = await note("Cooking/Starter Care.md");
