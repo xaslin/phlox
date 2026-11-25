@@ -36,9 +36,9 @@ function saveConfig() {
 const apiKey = () => cfg.apiKey || process.env.ANTHROPIC_API_KEY || "";
 
 const stateFile = () => path.join(cfg.vault, ".ember", "state.json");
-let state = { opened: {}, shown: {}, dismissed: [], snoozed: {} };
+let state = { opened: {}, shown: {}, dismissed: [], snoozed: {}, reviews: {} };
 function loadState() {
-  state = { opened: {}, shown: {}, dismissed: [], snoozed: {}, ...readJSON(stateFile(), {}) };
+  state = { opened: {}, shown: {}, dismissed: [], snoozed: {}, reviews: {}, ...readJSON(stateFile(), {}) };
 }
 function saveState() {
   fs.mkdirSync(path.dirname(stateFile()), { recursive: true });
@@ -336,6 +336,55 @@ function addDays(date, days) {
   d.setDate(d.getDate() + days);
   return d.toLocaleDateString("en-CA");
 }
+// ───────────── study cards ─────────────
+// A line starting `Q:` and the `A:` line after it make a card; the answer runs on until a blank line or the next Q:.
+const REVIEW_DAYS = [1, 2, 4, 8, 16, 32];
+function cardsIn(n) {
+  const cards = [];
+  let fenced = false, cur = null;
+  const close = () => {
+    if (cur && cur.a.length) {
+      const q = cur.q.replace(/\s+/g, " ").trim(), a = cur.a.join("\n").trim();
+      if (q && a) cards.push({ id: crypto.createHash("sha1").update(q.toLowerCase()).digest("hex").slice(0, 12), path: n.path, title: n.title, q, a });
+    }
+    cur = null;
+  };
+  for (const line of n.body.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; close(); continue; }
+    if (fenced) continue;
+    let m;
+    if ((m = line.match(/^\s*(?:[-*]\s+)?Q:\s*(.+)$/))) { close(); cur = { q: m[1], a: [] }; }
+    else if (cur && (m = line.match(/^\s*(?:[-*]\s+)?A:\s*(.*)$/)) && !cur.a.length) cur.a.push(m[1]);
+    else if (cur && cur.a.length && line.trim()) cur.a.push(line.trim());
+    else if (cur && !line.trim() && cur.a.length) close();
+  }
+  close();
+  return cards;
+}
+function reviewDeck() {
+  const date = today();
+  const all = notes.flatMap(cardsIn);
+  const due = all.filter((c) => !state.reviews[c.id] || state.reviews[c.id].due <= date);
+  due.sort((a, b) => ((state.reviews[a.id] || {}).due || "").localeCompare((state.reviews[b.id] || {}).due || "") || a.path.localeCompare(b.path));
+  const seen = all.filter((c) => state.reviews[c.id]);
+  const missed = seen.filter((c) => state.reviews[c.id].last === "missed").length;
+  return { date, total: all.length, due: due.map((c) => ({ ...c, tries: (state.reviews[c.id] || {}).misses || 0 })), fresh: all.length - seen.length, missed };
+}
+// Right moves a card up one step (longer until it comes back); wrong sends it to the start and counts the miss.
+function gradeCard(id, got) {
+  const card = notes.flatMap(cardsIn).find((c) => c.id === id);
+  if (!card) throw httpError(404, "That card is no longer in your notes");
+  const r = state.reviews[id] || { box: 0, misses: 0 };
+  r.box = got ? Math.min(r.box + 1, REVIEW_DAYS.length) : 0;
+  if (!got) r.misses++;
+  r.last = got ? "got" : "missed";
+  r.due = addDays(today(), got ? REVIEW_DAYS[r.box - 1] : 1);
+  state.reviews[id] = r;
+  for (const k of Object.keys(state.reviews)) if (state.reviews[k].due < addDays(today(), -400)) delete state.reviews[k];
+  saveState();
+  return { due: r.due };
+}
+
 const snoozed = (p, date) => (state.snoozed[p] || "") > date;
 // Notes worth bringing back today, best first, leaving out anything snoozed or already in `skip`.
 function rankToday(date, skip = new Set()) {
@@ -901,6 +950,8 @@ const routes = {
     return { path: rel };
   },
   "GET /api/today": () => ({ date: today(), picks: pickToday(), stats: stats(), briefing: briefing(), hasKey: Boolean(apiKey()) }),
+  "GET /api/review": () => reviewDeck(),
+  "POST /api/review": (q, b) => gradeCard(String(b.id || ""), Boolean(b.got)),
   "POST /api/snooze": (q, b) => snoozePick(b.path),
   "POST /api/daily": () => {
     const rel = `Daily/${today()}.md`;

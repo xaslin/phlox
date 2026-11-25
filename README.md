@@ -8,6 +8,7 @@ Local-first notes with a memory. Phlox reads a folder of Markdown files (an Obsi
 |---|---|---|
 | Today | A briefing: what changed in the last day, open tasks, link suggestions, conflicts, and projects (notes tagged `project`) not edited in 30 days. Three older notes worth another look ("Not today" swaps one out and keeps it away for a week), quick capture to `Inbox.md`, and a daily note. | No |
 | Tasks | Every unticked `- [ ]` checkbox across the folder. Ticking one rewrites that line in its note. Add `due: 2026-12-01` (or `📅 2026-12-01`) to a task and it is listed first under Due, with overdue ones marked; the Today briefing counts them. A box at the top adds a task (with an optional date) to a note you name, or to `Inbox.md`. | No |
+| Review | Quizzes you from `Q:` and `A:` lines in your notes (the answer can run over several lines). Show the answer, then mark Got it or Missed it: right answers return after 1, 2, 4, 8, 16, then 32 days, missed ones tomorrow. Lines inside code blocks are ignored. | No |
 | Connect | Pairs of notes that read alike but do not link to each other, with the words and two-word phrases they share. One click adds the link. | No |
 | Tensions | Passages that give different numbers for the same thing. | No |
 | Tensions, deeper read | Disagreements that are not about numbers. | Yes |

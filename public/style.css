@@ -269,3 +269,9 @@ mark { background: rgba(164, 139, 245, .28); color: inherit; border-radius: 2px;
   .hud-left { display: none; }
   .hud-right { left: 12px; right: 12px; top: auto; bottom: 40px; width: auto; max-height: 34%; }
 }
+
+.card-q { border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; max-width: 560px; }
+.card-q .md { font-size: 16px; }
+.card-q #ans { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; color: var(--muted); }
+.card-from { color: var(--faint); font-size: 12px; margin: 14px 0 10px; }
+.card-btns { display: flex; gap: 8px; }

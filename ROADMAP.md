@@ -4,11 +4,12 @@ The scheduled daily improvement run takes the first unchecked item, finishes it,
 
 ## Next
 
-- [ ] Study sessions: a Review screen that quizzes from `Q:`/`A:` lines in notes and remembers which ones were missed
+- [ ] Review: show missed cards first in a session and add a count of cards due to the Today briefing; accept a `## Question` heading followed by its answer as a card
 
 
 ## Done
 
+- [x] Review screen: `Q:` / `A:` lines in notes (also as list items; the answer may run over several lines) become cards. Show answer, then Got it or Missed it; right answers come back after 1, 2, 4, 8, 16 then 32 days, missed ones tomorrow. Remembered in `.ember/state.json`; the sidebar counts cards due (2026-11-25)
 - [x] Add a task from the Tasks screen: a box with an optional date and note name (defaults to Inbox) appends `- [ ] …` to that note (2026-11-24)
 - [x] Stale projects: Today lists notes tagged `project` not edited in 30 days (oldest first, up to six) under "Still going?", each linking to the note; a `done`, `archived` or `finished` tag keeps a project off the list (2026-11-23)
 - [x] Due dates on tasks: write `due: 2026-12-01`, `📅 2026-12-01` or `(due 2026-12-01)` in a task; Tasks lists dated ones first (overdue marked in violet) and the Today briefing counts overdue and due-this-week (2026-11-22)

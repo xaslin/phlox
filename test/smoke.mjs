@@ -265,6 +265,21 @@ async function run() {
   check("rename stays in the note's folder", !fs.existsSync(path.join(tmp, "escape.md")) && (r.status !== 200 || r.data.path.startsWith("Cooking/")), JSON.stringify(r.data));
   if (r.status === 200) await call("POST", "/api/rename", { path: r.data.path, title: "Rye Loaf" });
 
+  // study cards from Q:/A: lines
+  await call("POST", "/api/note", { title: "Cell Biology", folder: "Study" });
+  await call("PUT", "/api/note", { path: "Study/Cell Biology.md", raw: "# Cell Biology\n\nQ: What do mitochondria do?\nA: Make most of the cell's ATP.\nThey have their own DNA.\n\n- Q: Where is DNA kept?\n- A: In the nucleus.\n\n```\nQ: not a card\nA: inside code\n```\n\nQ: Unanswered question\n" });
+  r = await call("GET", "/api/review");
+  const cards = r.data.due || [];
+  check("review finds the Q:/A: cards", r.data.total === 2 && cards.length === 2, JSON.stringify(r.data));
+  check("review keeps multi-line answers and skips code", cards.some((c) => c.a.includes("their own DNA")) && !cards.some((c) => c.q.includes("not a card")));
+  const missCard = cards.find((c) => c.q.startsWith("Where"));
+  r = await call("POST", "/api/review", { id: missCard.id, got: false });
+  check("a missed card comes back tomorrow", r.status === 200 && (await call("GET", "/api/review")).data.due.length === 1 && (await call("GET", "/api/review")).data.missed === 1);
+  const rightCard = cards.find((c) => c.q.startsWith("What"));
+  r = await call("POST", "/api/review", { id: rightCard.id, got: true });
+  check("a right answer waits longer", r.status === 200 && (await call("GET", "/api/review")).data.due.length === 0, JSON.stringify(r.data));
+  check("review refuses an unknown card", (await call("POST", "/api/review", { id: "nope", got: true })).status === 404);
+
   // graph
   r = await call("GET", "/api/graph");
   const ids = new Set(r.data.nodes.map((n) => n.id));

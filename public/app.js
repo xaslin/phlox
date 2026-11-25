@@ -154,7 +154,8 @@ async function loadNotes() {
 // How many suggestions and conflicts are waiting, shown beside their screens.
 async function refreshBadges() {
   try {
-    const [c, t, k] = await Promise.all([api("/api/connect"), api("/api/tensions"), api("/api/tasks")]);
+    const [c, t, k, rv] = await Promise.all([api("/api/connect"), api("/api/tensions"), api("/api/tasks"), api("/api/review")]);
+    refreshReviewBadge(rv.due.length);
     $("#b-connect").textContent = c.pairs.length || "";
     $("#b-tensions").textContent = t.tensions.length || "";
     $("#b-tasks").textContent = k.open || "";
@@ -391,6 +392,57 @@ async function viewTasks(live) {
       toast(err.message);
     }
   }));
+}
+
+// ───────────── review ─────────────
+async function viewReview(live) {
+  const d = await api("/api/review");
+  if (!live()) return;
+  const queue = d.due.slice();
+  let done = 0, again = 0;
+  const draw = () => {
+    const c = queue[0];
+    const stat = `${queue.length} to go`;
+    if (!c) {
+      page(`<h1 class="page">Review</h1><p class="lede">${d.total ? (done ? `Done for now: ${plural(done, "card")} answered${again ? `, ${again} missed (they come back tomorrow)` : ""}.` : "Nothing is due. Cards come back on their own schedule.") : "No cards yet."}</p>
+        ${d.total ? "" : `<p class="lede">Write a question and its answer in any note, like this:</p><pre><code>Q: What does a mitochondrion do?\nA: Makes most of the cell's ATP.</code></pre>`}`, { title: "<b>Review</b>", stat: `${plural(d.total, "card")} in your notes` });
+      refreshReviewBadge(0);
+      return;
+    }
+    page(`
+      <h1 class="page">Review</h1>
+      <p class="lede">Read the question, say the answer to yourself, then check it. Cards are the <code>Q:</code> and <code>A:</code> lines in your notes.</p>
+      <div class="card-q"><div class="md">${render(c.q)}</div>
+        <div id="ans" hidden><div class="md">${render(c.a)}</div></div>
+        <p class="card-from"><a href="#/note/${encodeURIComponent(c.path)}">${esc(c.title)}</a>${c.tries ? ` · missed ${c.tries} ${c.tries === 1 ? "time" : "times"} before` : ""}</p>
+        <div class="card-btns"><button class="btn primary" id="show">Show answer</button><span id="grade" hidden><button class="btn" id="miss">Missed it</button> <button class="btn primary" id="got">Got it</button></span></div>
+      </div>`, { title: "<b>Review</b>", stat });
+    $("#show").onclick = () => {
+      $("#ans").hidden = false;
+      $("#grade").hidden = false;
+      $("#show").hidden = true;
+      $("#got").focus();
+    };
+    const grade = async (got) => {
+      try {
+        await api("/api/review", { body: { id: c.id, got } });
+      } catch (err) {
+        return toast(err.message);
+      }
+      queue.shift();
+      done++;
+      if (!got) again++;
+      refreshReviewBadge(queue.length);
+      draw();
+    };
+    $("#got").onclick = () => grade(true);
+    $("#miss").onclick = () => grade(false);
+  };
+  refreshReviewBadge(queue.length);
+  draw();
+}
+function refreshReviewBadge(n) {
+  $("#b-review").textContent = n || "";
 }
 
 async function viewNote(live, path) {
@@ -1265,7 +1317,7 @@ async function viewSphere(live) {
 
 // ───────────── command palette ─────────────
 const pal = $("#palette"), pq = $("#pq"), pl = $("#pl");
-const SCREENS = [["today", "Today"], ["tasks", "Tasks"], ["connect", "Connect"], ["tensions", "Tensions"], ["graph", "Graph"], ["sphere", "Sphere"], ["ask", "Ask"], ["digest", "Digest"], ["settings", "Settings"]];
+const SCREENS = [["today", "Today"], ["tasks", "Tasks"], ["review", "Review"], ["connect", "Connect"], ["tensions", "Tensions"], ["graph", "Graph"], ["sphere", "Sphere"], ["ask", "Ask"], ["digest", "Digest"], ["settings", "Settings"]];
 let palItems = [], palAt = 0, palMode = "jump", palSeq = 0, palTimer;
 
 // Scores how well the typed letters match a title; null when they do not appear in order.
@@ -1408,6 +1460,7 @@ async function route() {
     else if (view === "search") await viewSearch(live, arg);
     else if (view === "tag") viewTag(live, arg);
     else if (view === "tasks") await viewTasks(live);
+    else if (view === "review") await viewReview(live);
     else if (view === "connect") await viewConnect(live);
     else if (view === "tensions") await viewTensions(live);
     else if (view === "graph") await viewGraph(live);
