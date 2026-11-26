@@ -305,6 +305,7 @@ async function viewToday(live) {
   const lines = [
     b.changedCount ? `${plural(b.changedCount, "note")} changed in the last day.` : "Nothing has changed since yesterday.",
     b.openTasks ? `<a href="#/tasks">${plural(b.openTasks, "open task")}</a>${b.overdue || b.dueSoon ? ` (${[b.overdue && `${b.overdue} overdue`, b.dueSoon && `${b.dueSoon} due this week`].filter(Boolean).join(", ")})` : ""}.` : "",
+    b.cardsDue ? `<a href="#/review">${plural(b.cardsDue, "card")} to review</a>.` : "",
     c.pairs.length ? `<a href="#/connect">${plural(c.pairs.length, "pair")} of notes</a> could be linked.` : "",
     t.tensions.length ? `<a href="#/tensions">${plural(t.tensions.length, "place")}</a> where your notes disagree.` : "",
     b.streak > 1 ? `Day ${b.streak} in a row.` : "",

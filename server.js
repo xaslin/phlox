@@ -341,19 +341,25 @@ function addDays(date, days) {
 const REVIEW_DAYS = [1, 2, 4, 8, 16, 32];
 function cardsIn(n) {
   const cards = [];
-  let fenced = false, cur = null;
+  let fenced = false, cur = null, byHeading = false;
   const close = () => {
     if (cur && cur.a.length) {
       const q = cur.q.replace(/\s+/g, " ").trim(), a = cur.a.join("\n").trim();
       if (q && a) cards.push({ id: crypto.createHash("sha1").update(q.toLowerCase()).digest("hex").slice(0, 12), path: n.path, title: n.title, q, a });
     }
     cur = null;
+    byHeading = false;
   };
   for (const line of n.body.split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; close(); continue; }
-    if (fenced) continue;
+    if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; if (!byHeading) close(); else if (cur) cur.a.push(line.trim()); continue; }
+    if (fenced) { if (byHeading && cur && line.trim()) cur.a.push(line.trim()); continue; }
     let m;
-    if ((m = line.match(/^\s*(?:[-*]\s+)?Q:\s*(.+)$/))) { close(); cur = { q: m[1], a: [] }; }
+    if ((m = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/))) {
+      close();
+      // a heading written as a question (ends in "?") is a card; the text under it, up to the next heading, is the answer
+      if (m[1].endsWith("?")) { cur = { q: m[1], a: [] }; byHeading = true; }
+    } else if ((m = line.match(/^\s*(?:[-*]\s+)?Q:\s*(.+)$/))) { close(); cur = { q: m[1], a: [] }; }
+    else if (byHeading) { if (line.trim()) cur.a.push(line.trim()); }
     else if (cur && (m = line.match(/^\s*(?:[-*]\s+)?A:\s*(.*)$/)) && !cur.a.length) cur.a.push(m[1]);
     else if (cur && cur.a.length && line.trim()) cur.a.push(line.trim());
     else if (cur && !line.trim() && cur.a.length) close();
@@ -365,7 +371,8 @@ function reviewDeck() {
   const date = today();
   const all = notes.flatMap(cardsIn);
   const due = all.filter((c) => !state.reviews[c.id] || state.reviews[c.id].due <= date);
-  due.sort((a, b) => ((state.reviews[a.id] || {}).due || "").localeCompare((state.reviews[b.id] || {}).due || "") || a.path.localeCompare(b.path));
+  const wasMissed = (c) => (state.reviews[c.id] || {}).last === "missed";
+  due.sort((a, b) => wasMissed(b) - wasMissed(a) || ((state.reviews[a.id] || {}).due || "").localeCompare((state.reviews[b.id] || {}).due || "") || a.path.localeCompare(b.path));
   const seen = all.filter((c) => state.reviews[c.id]);
   const missed = seen.filter((c) => state.reviews[c.id].last === "missed").length;
   return { date, total: all.length, due: due.map((c) => ({ ...c, tries: (state.reviews[c.id] || {}).misses || 0 })), fresh: all.length - seen.length, missed };
@@ -473,6 +480,7 @@ function briefing() {
     openTasks: notes.reduce((a, n) => a + n.tasks.filter((t) => !t.done).length, 0),
     overdue: dueTasks().filter((t) => t.days < 0).length,
     dueSoon: dueTasks().filter((t) => t.days >= 0 && t.days <= 7).length,
+    cardsDue: reviewDeck().due.length,
     missing: [...missing].sort((a, b) => b[1].length - a[1].length).slice(0, 8).map(([title, from]) => ({ title, from: [...new Set(from)].slice(0, 3) })),
     stale: staleProjects().slice(0, 6),
     streak,

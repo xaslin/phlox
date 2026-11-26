@@ -278,6 +278,13 @@ async function run() {
   const rightCard = cards.find((c) => c.q.startsWith("What"));
   r = await call("POST", "/api/review", { id: rightCard.id, got: true });
   check("a right answer waits longer", r.status === 200 && (await call("GET", "/api/review")).data.due.length === 0, JSON.stringify(r.data));
+  check("briefing counts cards due", (await call("GET", "/api/today")).data.briefing.cardsDue === 0);
+  await call("POST", "/api/note", { title: "Heading Cards", folder: "Study" });
+  await call("PUT", "/api/note", { path: "Study/Heading Cards.md", raw: "# Heading Cards\n\n## Why is the sky blue?\nShort light waves scatter more.\nThis is called Rayleigh scattering.\n\n## Not a question\nThis heading stays plain text.\n\n### What is a prime?\nA number with two divisors.\n" });
+  r = await call("GET", "/api/review");
+  const hc = r.data.due || [];
+  check("a heading that asks a question becomes a card", hc.length === 2 && hc.some((c) => c.q === "Why is the sky blue?" && c.a.includes("Rayleigh")) && hc.some((c) => c.q === "What is a prime?" && c.a === "A number with two divisors."), JSON.stringify(hc));
+  check("briefing counts the new cards", (await call("GET", "/api/today")).data.briefing.cardsDue === 2);
   check("review refuses an unknown card", (await call("POST", "/api/review", { id: "nope", got: true })).status === 404);
 
   // graph
